@@ -70,9 +70,12 @@ export const StockOperationCard: React.FC<StockOperationCardProps> = ({
   const isLowStock = (operation.opening_stock || 0) < 10;
   const hasWastage = (operation.wastage_stock || 0) > 0;
   const hasStolenStock = stolenStock > 0;
+  const exceedsEstimated = (operation.actual_closing_stock || 0) > estimatedClosingStock;
+  const exceedsWithWastage = (operation.actual_closing_stock || 0) + (operation.wastage_stock || 0) > estimatedClosingStock;
+  const hasValidationError = exceedsEstimated || exceedsWithWastage;
 
   return (
-    <Card className="w-full bg-white shadow-sm hover:shadow-md transition-shadow duration-200">
+    <Card className={`w-full bg-white shadow-sm hover:shadow-md transition-shadow duration-200 ${hasValidationError ? 'border-red-300 bg-red-50' : ''}`}>
       <CardHeader className="pb-2 px-4 pt-4">
         <div className="flex items-start gap-2">
           {/* Left Column - Image */}
@@ -153,6 +156,11 @@ export const StockOperationCard: React.FC<StockOperationCardProps> = ({
                 onChange={(e) => onOperationChange(operation.id, operation.product_id, 'actual_closing_stock', Number(e.target.value) || 0)}
                 className="text-right font-bold text-green-600 border-green-300 focus:border-green-500 h-8 text-sm"
               />
+              {exceedsEstimated && (
+                <div className="text-xs text-red-600 mt-1">
+                  Actual exceeds estimated.
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -170,6 +178,11 @@ export const StockOperationCard: React.FC<StockOperationCardProps> = ({
                 onChange={(e) => onOperationChange(operation.id, operation.product_id, 'wastage_stock', Number(e.target.value) || 0)}
                 className="text-right text-xs h-7"
               />
+              {!exceedsEstimated && exceedsWithWastage && (
+                <div className="text-xs text-red-600 mt-1">
+                  Actual + Wastage exceeds estimated.
+                </div>
+              )}
             </div>
             <div className="bg-white rounded-sm p-1.5 border border-gray-200">
               <div className="text-xs text-gray-500 mb-1">Stolen</div>

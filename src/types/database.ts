@@ -21,7 +21,6 @@ export interface DatabaseProduct {
   updated_at: string | null;
   created_by: string | null;
   updated_by: string | null;
-  opening_stock: number;
   image_url: string | null;
 }
 

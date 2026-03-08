@@ -1,31 +1,19 @@
 # Shasun College Honesty Shop 🏫
 
-A modern honesty shop management system built specifically for **Shasun
-College**. This application promotes integrity and trust by allowing students to
-purchase items on an honor system, tracking their honesty points and badges.
+A modern honesty shop management system built specifically for **Shasun College**. This application promotes integrity and trust by allowing students to purchase items on an honor system, tracking their honesty points and badges.
 
-## Recent Changes (2026-01-12)
-
-- **Fixes**: Corrected Zod `safeParse` handling in Supabase edge functions so
-  TypeScript can safely access validation errors when parsing fails.
-- **Files Updated**: `supabase/functions/get-database-schema/index.ts`,
-  `supabase/functions/update-table-stats/index.ts`.
-- **Other**: Removed an unused `SupabaseClient` import from
-  `supabase/functions/get-database-schema/index.ts` and addressed related lint
-  errors.
+_No Cameras 📷 | No Cashiers 💳 | Just Character 🫡_
 
 ## ✨ Features
 
 ### Core Features
 
-- **Self-service shopping**: Students browse and purchase products without a
-  cashier
-- **Honesty-based payments**: Multiple payment options including Pay Now and Pay
-  Later
+- **Self-service shopping**: Students browse and purchase products without a cashier
+- **Honesty-based payments**: Multiple payment options including Pay Now and Pay Later
 - **Points & Gamification**: Earn honesty points for timely payments
 - **Badge System**: Unlock achievement badges based on behavior
-- **Real-time Dashboard**: Live statistics on sales, top students, and
-  departments
+- **Real-time Dashboard**: Live statistics on sales, top students, and departments
+- **Reorder Flow**: Quickly reorder items from previous orders with Pay Now / Pay Later options
 
 ### Admin Features
 
@@ -35,13 +23,13 @@ purchase items on an honor system, tracking their honesty points and badges.
 - **Payment Reports**: Generate detailed payment reports
 - **Stock Operations**: Daily stock reconciliation and auditing
 - **Audit Logs**: Complete audit trail for admin actions
+- **Announcements**: Send targeted or department-wide notifications
 
 ### Security Features
 
 - **Role-based Access Control**: Admin, Developer, Student, and Teacher roles
 - **Row Level Security (RLS)**: Database-level security policies
-- **Two-Factor Authentication (2FA)**: Optional MFA with login requirement
-  toggle
+- **Two-Factor Authentication (2FA)**: Optional MFA with login requirement toggle
 - **Session Management**: Secure session handling with automatic timeouts
 - **PII Protection**: MFA-protected access to sensitive student information
 
@@ -85,8 +73,7 @@ VITE_SUPABASE_URL="https://your-project-id.supabase.co"
 
 1. **Create a Supabase project** at [supabase.com](https://supabase.com)
 
-2. **Run database migrations**: The migrations in `supabase/migrations/` will
-   set up:
+2. **Run database migrations**: The migrations in `supabase/migrations/` will set up:
    - User tables with role-based access
    - Product and inventory tables
    - Order management tables
@@ -98,8 +85,7 @@ VITE_SUPABASE_URL="https://your-project-id.supabase.co"
    - Disable "Confirm email" for faster testing (optional)
    - Set Site URL to your deployment URL
 
-4. **Set up Edge Functions secrets** in Supabase Dashboard → Settings →
-   Functions:
+4. **Set up Edge Functions secrets** in Supabase Dashboard → Settings → Functions:
    - `SUPABASE_SERVICE_ROLE_KEY` (Required)
    - `HCAPTCHA_SECRET_KEY` (Optional, for captcha)
    - `GMAIL_*` secrets (Optional, for email notifications)
@@ -109,24 +95,19 @@ VITE_SUPABASE_URL="https://your-project-id.supabase.co"
    - No additional configuration required
    - Users can enable 2FA individually in their Settings
 
-### 6. Create Initial Admin User
+### 4. Create Initial Admin User
 
 1. Sign up through the application with your college email
 2. In Supabase Dashboard → SQL Editor, run:
 
 ```sql
--- Update user role to admin
-UPDATE public.users 
-SET role = 'admin' 
-WHERE student_id = 'YOUR_STUDENT_ID';
+UPDATE public.users SET role = 'admin' WHERE student_id = 'YOUR_STUDENT_ID';
 
--- Add to user_roles table
 INSERT INTO public.user_roles (user_id, role)
-SELECT id, 'admin' FROM public.users 
-WHERE student_id = 'YOUR_STUDENT_ID';
+SELECT id, 'admin' FROM public.users WHERE student_id = 'YOUR_STUDENT_ID';
 ```
 
-### 7. Run Development Server
+### 5. Run Development Server
 
 ```bash
 npm run dev
@@ -138,61 +119,50 @@ The application will be available at `http://localhost:5173`
 
 ```
 ├── src/
-│   ├── components/       # React components
-│   │   ├── admin/       # Admin-specific components
-│   │   ├── auth/        # Authentication components
-│   │   ├── common/      # Shared components
-│   │   ├── dashboard/   # Dashboard components
-│   │   └── ui/          # UI primitives (shadcn)
-│   ├── contexts/        # React contexts (Auth, Product)
-│   ├── features/        # Feature modules (gamification)
-│   ├── hooks/           # Custom React hooks
-│   ├── pages/           # Page components
-│   │   └── admin/       # Admin pages
-│   ├── services/        # API services
-│   ├── types/           # TypeScript types
-│   └── utils/           # Utility functions
+│   ├── components/          # React components
+│   │   ├── admin/           # Admin-specific components
+│   │   ├── auth/            # Authentication components
+│   │   ├── checkout/        # Reorder checkout flow
+│   │   ├── common/          # Shared components
+│   │   ├── dashboard/       # Dashboard components
+│   │   └── ui/              # UI primitives (shadcn)
+│   ├── contexts/            # React contexts (Auth, Product)
+│   ├── features/            # Feature modules (gamification)
+│   ├── hooks/               # Custom React hooks
+│   ├── pages/               # Page components
+│   │   └── admin/           # Admin pages
+│   ├── services/            # API services
+│   ├── types/               # TypeScript types (see Types section below)
+│   └── utils/               # Utility functions
+├── server/                  # Express server for API routes
 ├── supabase/
-│   ├── functions/       # Edge functions (includes MFA setup/verify/disable)
-│   └── migrations/      # Database migrations
-└── public/              # Static assets
+│   ├── functions/           # Edge functions (auth, MFA, orders, etc.)
+│   └── migrations/          # Database migrations
+├── docs/                    # Extended documentation
+│   ├── getting-started.md
+│   ├── app-functions-guide.md
+│   ├── api-documentation.md
+│   ├── user-guides/user-guide.md
+│   └── advanced-analytics-plan.md
+└── public/                  # Static assets
 ```
 
 ## 🔐 Security & Authentication
 
 ### Two-Factor Authentication (2FA)
 
-The application includes comprehensive 2FA support for enhanced security:
-
-#### **Setup Process**
-
-1. Navigate to **Settings → Security Settings**
-2. Click "Enable Two-Factor Authentication"
-3. Scan QR code with authenticator app (Google Authenticator, Authy, etc.)
-4. Enter verification code to activate
-
-#### **2FA Features**
-
+- **Setup**: Settings → Security Settings → Enable 2FA → Scan QR with authenticator app
 - **Service Name**: Shows as "Shasun College Honesty Shop" in authenticator apps
 - **Login Requirement Toggle**: Choose whether 2FA is required for every login
-- **Visual Status Indicators**: Color-coded interface (green=active,
-  red=inactive)
-- **Confirmation Dialog**: Prevents accidental disabling with security warnings
-- **Flexible Usage**: Can be enabled for security but made optional for login
-  convenience
+- **PII Protection**: Admin access to sensitive student info requires MFA verification
 
-#### **Login Flow with 2FA**
+### MFA Edge Functions
 
-1. Enter Student ID and Password
-2. If 2FA is enabled and required → Enter 6-digit verification code
-3. If 2FA is enabled but not required → Direct login (optional security)
-4. Successful authentication → Redirect to dashboard
-
-#### **PII Protection**
-
-- Admin access to sensitive student information requires MFA verification
-- Separate verification prompt for accessing masked student data
-- All PII access logged in audit trail
+- `supabase/functions/mfa-setup/` — Generate MFA secrets and QR codes
+- `supabase/functions/mfa-verify/` — Verify MFA tokens and enable MFA
+- `supabase/functions/mfa-status/` — Check MFA status
+- `supabase/functions/mfa-disable/` — Disable MFA
+- `supabase/functions/mfa-verify-session/` — Verify MFA for PII access
 
 ### User Roles
 
@@ -207,20 +177,44 @@ The application includes comprehensive 2FA support for enhanced security:
 
 ### Points System
 
-- **Immediate Payment**: +10 points
-- **Payment within 30 hours**: +8 points
-- **Payment within 48 hours**: +5 points
-- **Payment within 72 hours**: +2 points
-- **Late Payment (after 72h)**: -5 points
+| Action                      | Points |
+| --------------------------- | ------ |
+| Immediate Payment           | +10    |
+| Payment within 30 hours     | +8     |
+| Payment within 48 hours     | +5     |
+| Payment within 72 hours     | +2     |
+| Late Payment (after 72h)    | -5     |
 
 ### Badges
 
-Badges are awarded based on achievements such as:
+Badges are awarded based on achievements such as first purchase, consistent timely payments, department rankings, and point milestones.
 
-- First purchase
-- Consistent timely payments
-- Department rankings
-- Point milestones
+## 📝 Types System
+
+All TypeScript types are organized by domain in `src/types/`:
+
+| File            | Contents                                                    |
+| --------------- | ----------------------------------------------------------- |
+| `index.ts`      | Central re-exports for convenience                          |
+| `auth.ts`       | `UserProfile`, `AuthSession`, `LoginResult`, etc.           |
+| `database.ts`   | `User`, `Product`, `Order`, `Badge`, database entity types  |
+| `common.ts`     | `CartItem`, `DashboardStats`, UI component props            |
+| `api.ts`        | Edge function request/response types                        |
+| `hooks.ts`      | `UseCartReturn`, `UseAuthReturn`, hook return types         |
+| `constants.ts`  | `USER_ROLES`, `PAYMENT_STATUS`, type-safe constants         |
+| `branding.ts`   | Whitelabel branding configuration types                     |
+| `supabase.ts`   | Auto-generated Supabase database types                      |
+
+**Best practices**: Use `import type` for all type imports. Extend base types instead of duplicating. Use type-safe constants from `constants.ts`.
+
+## 🖥️ Express Server
+
+The Express server (`server/`) handles API routes for the Vite React application. MFA functionality has been moved to Supabase Edge Functions.
+
+- `server/index.js` — Main Express server with Vite middleware
+- `server/lib/supabase.js` — Supabase admin client and auth helpers
+
+All endpoints require authentication via Bearer token in the Authorization header.
 
 ## 🚢 Deployment
 
@@ -229,8 +223,6 @@ Badges are awarded based on achievements such as:
 ```bash
 npm run build
 ```
-
-The built files will be in the `dist/` folder.
 
 ### Deploy to Netlify
 
@@ -247,65 +239,37 @@ The built files will be in the `dist/` folder.
 
 ### Edge Functions Deployment
 
-Edge functions in `supabase/functions/` are automatically deployed when you push
-to your Supabase project. Ensure you have:
+```bash
+supabase link --project-ref your-project-id
+supabase secrets set SECRET_NAME=value
+```
 
-1. Linked your project: `supabase link --project-ref your-project-id`
-2. Set up secrets: `supabase secrets set SECRET_NAME=value`
+Edge functions in `supabase/functions/` are automatically deployed when you push to your Supabase project.
 
 ## 🔧 Configuration
 
-### Email Domain
-
-The application uses `@shasuncollege.edu.in` as the email domain for student
-authentication. This is configured in `src/services/authService.ts`.
-
-### Points Configuration
-
-Point values are stored in the `points_config` table and can be modified through
-the admin panel.
-
-### Session Timeout
-
-Default session timeout is configured in the application settings. Modify in
-`src/config.ts` if needed.
+- **Email Domain**: `@shasuncollege.edu.in` — configured in `src/services/authService.ts`
+- **Points Config**: Stored in `points_config` table, modifiable via admin panel
+- **Session Timeout**: Configured in `src/config.ts`
 
 ## 📊 Database Schema
 
-Key tables:
-
-- `users` - User profiles and points
-- `user_roles` - Role-based access control
-- `user_mfa` - Two-factor authentication secrets and settings
-- `products` - Product catalog
-- `orders` / `order_items` - Order management
-- `badges` / `user_badges` - Gamification
-- `daily_stock_operations` - Inventory tracking
-- `admin_audit_log` - Audit trail
+Key tables: `users`, `user_roles`, `user_mfa`, `products`, `orders`, `order_items`, `badges`, `user_badges`, `daily_stock_operations`, `admin_audit_log`, `notifications`, `notification_reads`, `points_config`, `points_log`, `gamification_rules`
 
 ## 🐛 Troubleshooting
 
-### Common Issues
-
-1. **"Failed to load students"**: Ensure edge functions are deployed and secrets
-   are configured
-2. **Authentication errors**: Check Supabase authentication settings and email
-   domain
-3. **Permission denied**: Verify RLS policies and user roles
-4. **2FA QR code not loading**: Ensure MFA edge functions are deployed and
-   accessible
-5. **2FA verification fails**: Check that the authenticator app time is
-   synchronized
-6. **"MFA not set up" error**: User needs to complete 2FA setup process first
-
-### Debug Mode
-
-Check browser console and Supabase logs for detailed error messages.
+| Issue | Solution |
+| ----- | -------- |
+| Failed to load students | Ensure edge functions are deployed and secrets configured |
+| Authentication errors | Check Supabase auth settings and email domain |
+| Permission denied | Verify RLS policies and user roles |
+| 2FA QR code not loading | Ensure MFA edge functions are deployed |
+| 2FA verification fails | Check authenticator app time is synchronized |
+| MFA not set up error | User needs to complete 2FA setup first |
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
-for details.
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
 
 ## 👥 Support
 
@@ -314,5 +278,3 @@ For technical support or questions, contact the IT department at Shasun College.
 ---
 
 **Built with ❤️ for Shasun College**
-
-_No Cameras 📷 | No Cashiers 💳 | Just Character 🫡_

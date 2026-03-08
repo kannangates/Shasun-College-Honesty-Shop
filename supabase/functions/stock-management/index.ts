@@ -178,7 +178,7 @@ serve(async (req: Request) => {
         // Adjust shelf stock (can be positive or negative)
         const { data: product, error: fetchError } = await supabase
           .from('products')
-          .select('shelf_stock')
+          .select('shelf_stock, warehouse_stock')
           .eq('id', productId)
           .single();
 

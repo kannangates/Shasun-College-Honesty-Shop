@@ -39,14 +39,16 @@ serve(async (req: Request) => {
       );
     }
 
-    // Check if requesting user is admin using secure user_roles table
-    const { data: userRole, error: roleError } = await supabase
+    // Check if requesting user is admin or developer using user_roles table
+    const { data: userRoles, error: roleError } = await supabase
       .from('user_roles')
       .select('role')
-      .eq('user_id', user.id)
-      .single();
+      .eq('user_id', user.id);
 
-    if (roleError || !userRole || userRole.role !== 'admin') {
+    const roles = userRoles?.map(r => r.role) || [];
+    const isAdmin = roles.includes('admin') || roles.includes('developer');
+
+    if (roleError || !isAdmin) {
       return new Response(
         JSON.stringify({ error: 'Forbidden: Admin access required' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -90,7 +92,7 @@ serve(async (req: Request) => {
         await logAdminAction({
           supabase,
           userId: user.id,
-          userRole: userRole.role,
+          userRole: roles.includes('admin') ? 'admin' : 'developer',
           action: 'SELECT',
           tableName: 'orders',
           newValues: { operation: 'fetch_orders', note: 'Admin accessed all orders with customer PII' },
@@ -123,7 +125,7 @@ serve(async (req: Request) => {
         await logAdminAction({
           supabase,
           userId: user.id,
-          userRole: userRole.role,
+          userRole: roles.includes('admin') ? 'admin' : 'developer',
           action: 'SELECT',
           tableName: 'orders',
           newValues: { operation: 'get_stats', note: 'Admin accessed revenue and financial metrics' },
@@ -208,7 +210,7 @@ serve(async (req: Request) => {
         await logAdminAction({
           supabase,
           userId: user.id,
-          userRole: userRole.role,
+          userRole: roles.includes('admin') ? 'admin' : 'developer',
           action: 'UPDATE',
           tableName: 'orders',
           recordId: id,

@@ -1,15 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Package, Pencil, Plus, Grid, List } from 'lucide-react';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/features/gamification/components/badge';
 import { getGeneralStatusClass, getStockBadgeClass } from '@/utils/statusSystem';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { supabase } from '@/integrations/supabase/client';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
-import { PRODUCT_CATEGORIES } from '@/constants/productCategories';
 import { useAuth } from '@/hooks/useAuth';
 import { useProductContext } from '@/contexts/useProductContext';
 
@@ -25,7 +23,6 @@ interface Product {
   name: string;
   category: string;
   unit_price: number;
-  opening_stock: number;
   warehouse_stock: number;
   shelf_stock: number;
   status: string;
@@ -37,31 +34,17 @@ interface Product {
 }
 
 
-interface InventoryFiltersState {
-  search: string;
-  category: string;
-  status: string;
-  stockLevel: string;
-}
-
 export const AdminInventoryManagement = () => {
-  const { user } = useAuth();
+  useAuth();
   const { fetchProducts: refreshProductContext } = useProductContext();
   const [products, setProducts] = useState<Product[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [lowStockProducts, setLowStockProducts] = useState<Product[]>([]);
-  const [filters, setFilters] = useState<InventoryFiltersState>({
-    search: '',
-    category: '',
-    status: '',
-    stockLevel: ''
-  });
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState('active');
   const [stockFilter, setStockFilter] = useState('all');
-  const [showLowStock, setShowLowStock] = useState(false);
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedForEdit, setSelectedForEdit] = useState<Product | null>(null);
@@ -114,9 +97,6 @@ export const AdminInventoryManagement = () => {
     }
   }, [toast]);
 
-  const fetchCategories = async () => {
-    // Categories are now defined in constants, no need to fetch
-  };
 
   const fetchLowStockProducts = async () => {
     try {
@@ -138,7 +118,6 @@ export const AdminInventoryManagement = () => {
 
   useEffect(() => {
     fetchProducts();
-    fetchCategories();
     fetchLowStockProducts();
   }, [fetchProducts]);
 
@@ -268,7 +247,6 @@ export const AdminInventoryManagement = () => {
           status: productData.status,
           shelf_stock: productData.shelf_stock,
           warehouse_stock: productData.warehouse_stock,
-          opening_stock: (productData.shelf_stock || 0) + (productData.warehouse_stock || 0),
           is_archived: false,
           created_by: currentUser?.id || null,
           created_at: new Date().toISOString(),
@@ -383,7 +361,6 @@ export const AdminInventoryManagement = () => {
                     <TableHead>Product</TableHead>
                     <TableHead>Category</TableHead>
                     <TableHead>Price</TableHead>
-                    <TableHead>Opening Stock</TableHead>
                     <TableHead>Warehouse Stock</TableHead>
                     <TableHead>Shelf Stock</TableHead>
                     <TableHead>Status</TableHead>
@@ -396,7 +373,6 @@ export const AdminInventoryManagement = () => {
                       <TableCell className="font-medium">{product.name}</TableCell>
                       <TableCell>{product.category}</TableCell>
                       <TableCell>₹{product.unit_price}</TableCell>
-                      <TableCell>{product.opening_stock}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className={getStockBadgeClass(product.warehouse_stock || 0)}>
                           {product.warehouse_stock || 0}

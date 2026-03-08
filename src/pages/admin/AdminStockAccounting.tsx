@@ -30,7 +30,6 @@ interface Product {
   created_by?: string;
   image_url?: string;
   is_archived?: boolean;
-  opening_stock?: number;
   status?: string;
   unit_price?: number;
   updated_by?: string;
@@ -111,6 +110,36 @@ const AdminStockAccounting = () => {
   const { user, profile } = useAuth();
   const errorMessages = WHITELABEL_CONFIG.messages.errors;
   const today = new Date().toISOString().split('T')[0];
+  const getLocalDayRange = useCallback(() => {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    return { start, end };
+  }, []);
+
+  const computeEstimatedClosing = useCallback((opening: number, additional: number, orderCount: number) => {
+    return (opening || 0) + (additional || 0) - (orderCount || 0);
+  }, []);
+
+  const computeStolenStock = useCallback((estimated: number, actual: number, wastage: number) => {
+    return Math.max(0, (estimated || 0) - (actual || 0) - (wastage || 0));
+  }, []);
+
+  const computeSalesAmount = useCallback((unitPrice: number, orderCount: number) => {
+    return (unitPrice || 0) * (orderCount || 0);
+  }, []);
+
+  const getValidationIssues = useCallback((op: StockOperation) => {
+    const estimated = computeEstimatedClosing(op.opening_stock, op.additional_stock, op.order_count);
+    const actual = op.actual_closing_stock || 0;
+    const wastage = op.wastage_stock || 0;
+    return {
+      estimated,
+      exceedsEstimated: actual > estimated,
+      exceedsWithWastage: actual + wastage > estimated,
+    };
+  }, [computeEstimatedClosing]);
 
   // Auto-switch to cards view on mobile
   useEffect(() => {
@@ -139,6 +168,7 @@ const AdminStockAccounting = () => {
   // Real-time setup and cleanup
   const setupRealtimeSubscription = useCallback(() => {
     if (!user) return;
+    const { start } = getLocalDayRange();
 
     // Subscribe to stock operations changes
     const channel = supabase
@@ -149,7 +179,7 @@ const AdminStockAccounting = () => {
           event: '*',
           schema: 'public',
           table: 'daily_stock_operations',
-          filter: `created_at=gte.${today}T00:00:00`
+          filter: `created_at=gte.${start.toISOString()}`
         },
         async (payload) => {
           try {
@@ -224,7 +254,7 @@ const AdminStockAccounting = () => {
         supabase.removeChannel(realtimeChannelRef.current);
       }
     };
-  }, [user, today, broadcastUserActivity]);
+  }, [user, broadcastUserActivity, getLocalDayRange]);
 
   const trackUserActivity = useCallback(() => {
     lastActivityRef.current = Date.now();
@@ -282,32 +312,54 @@ const AdminStockAccounting = () => {
       // Format today's date to match the database format
       const todayFormatted = new Date().toISOString().split('T')[0];
 
-      // Calculate yesterday's date
-      const yesterdayDate = new Date();
-      yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-      const yesterdayFormatted = yesterdayDate.toISOString().split('T')[0];
+      // Build local date range for today
+      const { start: todayStartDate, end: tomorrowStartDate } = getLocalDayRange();
+      const todayStart = todayStartDate.toISOString();
+      const tomorrowStart = tomorrowStartDate.toISOString();
 
       // Load today's operations
       const { data: operationsData, error: operationsError } = await supabase
         .from('daily_stock_operations')
         .select('*')
-        .eq('created_at', todayFormatted);
+        .gte('created_at', todayStart)
+        .lt('created_at', tomorrowStart);
 
       if (operationsError) throw operationsError;
 
-      // Load yesterday's operations to get closing stock
-      const { data: yesterdayOperationsData, error: yesterdayError } = await supabase
+      // Load today's sold quantities per product (sum of order_items.quantity for today)
+      const { data: orderItemsData, error: orderItemsError } = await supabase
+        .from('order_items')
+        .select('product_id, quantity, orders!inner(created_at, payment_status)')
+        .gte('orders.created_at', todayStart)
+        .lt('orders.created_at', tomorrowStart)
+        .neq('orders.payment_status', 'cancelled');
+
+      if (orderItemsError) throw orderItemsError;
+
+      const todaySoldQtyMap = new Map<string, number>();
+      (orderItemsData ?? []).forEach((item: { product_id: string; quantity: number }) => {
+        if (!item.product_id) return;
+        todaySoldQtyMap.set(
+          item.product_id,
+          (todaySoldQtyMap.get(item.product_id) || 0) + (item.quantity || 0)
+        );
+      });
+
+      // Load latest previous operations to get closing stock (search backwards until found)
+      const { data: previousOperationsData, error: previousError } = await supabase
         .from('daily_stock_operations')
-        .select('product_id, actual_closing_stock')
-        .eq('created_at', yesterdayFormatted);
+        .select('product_id, actual_closing_stock, created_at')
+        .lt('created_at', todayStart)
+        .order('created_at', { ascending: false });
 
-      if (yesterdayError) throw yesterdayError;
+      if (previousError) throw previousError;
 
-      // Create a map of yesterday's closing stock by product_id
-      const yesterdayClosingStockMap = new Map<string, number>();
-      (yesterdayOperationsData ?? []).forEach(op => {
-        if (op.product_id && op.actual_closing_stock !== null) {
-          yesterdayClosingStockMap.set(op.product_id, op.actual_closing_stock);
+      // Create a map of latest previous closing stock by product_id
+      const previousClosingStockMap = new Map<string, number>();
+      (previousOperationsData ?? []).forEach(op => {
+        if (!op.product_id || op.actual_closing_stock === null) return;
+        if (!previousClosingStockMap.has(op.product_id)) {
+          previousClosingStockMap.set(op.product_id, op.actual_closing_stock);
         }
       });
 
@@ -336,8 +388,25 @@ const AdminStockAccounting = () => {
       opsData.forEach(op => {
         const product = transformedProducts.find(p => p.id === op.product_id);
         if (product) {
+          const orderQty = todaySoldQtyMap.get(op.product_id) ?? 0;
+          const estimatedClosing = computeEstimatedClosing(
+            op.opening_stock || 0,
+            op.additional_stock || 0,
+            orderQty
+          );
+          const stolenStock = computeStolenStock(
+            estimatedClosing,
+            op.actual_closing_stock || 0,
+            op.wastage_stock || 0
+          );
+          const unitPrice = product.unit_price || 0;
+          const salesAmount = computeSalesAmount(unitPrice, orderQty);
           mergedOperations.push({
             ...op,
+            order_count: orderQty,
+            estimated_closing_stock: estimatedClosing,
+            stolen_stock: stolenStock,
+            sales: salesAmount,
             product,
           });
         }
@@ -348,7 +417,12 @@ const AdminStockAccounting = () => {
         const hasOperation = opsData.some(op => op.product_id === product.id);
         if (!hasOperation) {
           // Get previous day's closing stock, fall back to current shelf_stock if not found
-          const openingStock = yesterdayClosingStockMap.get(product.id) ?? product.shelf_stock;
+          const openingStock = previousClosingStockMap.get(product.id) ?? product.shelf_stock;
+          const orderQty = todaySoldQtyMap.get(product.id) ?? 0;
+          const estimatedClosing = computeEstimatedClosing(openingStock, 0, orderQty);
+          const stolenStock = computeStolenStock(estimatedClosing, openingStock, 0);
+          const unitPrice = product.unit_price || 0;
+          const salesAmount = computeSalesAmount(unitPrice, orderQty);
 
           mergedOperations.push({
             id: undefined,
@@ -357,12 +431,12 @@ const AdminStockAccounting = () => {
             opening_stock: openingStock,
             additional_stock: 0,
             actual_closing_stock: openingStock,
-            estimated_closing_stock: openingStock,
-            stolen_stock: 0,
+            estimated_closing_stock: estimatedClosing,
+            stolen_stock: stolenStock,
             wastage_stock: 0,
             warehouse_stock: product.warehouse_stock,
-            sales: 0,
-            order_count: 0,
+            sales: salesAmount,
+            order_count: orderQty,
             created_at: todayFormatted,
             updated_at: null,
           });
@@ -383,7 +457,7 @@ const AdminStockAccounting = () => {
     } finally {
       setLoading(false);
     }
-  }, [toast, errorMessages]);
+  }, [toast, errorMessages, computeEstimatedClosing, computeSalesAmount, computeStolenStock, getLocalDayRange]);
 
   const applyFilters = useCallback(() => {
     let filtered = [...stockOperations];
@@ -450,6 +524,10 @@ const AdminStockAccounting = () => {
   }, []);
 
   const filteredOperations = applyFilters();
+  const hasValidationErrors = stockOperations.some(op => {
+    const { exceedsEstimated, exceedsWithWastage } = getValidationIssues(op);
+    return exceedsEstimated || exceedsWithWastage;
+  });
 
   // Calculate grand total sales based on actual stock sold
   const grandTotalSales = filteredOperations.reduce((total, operation) => {
@@ -507,19 +585,33 @@ const AdminStockAccounting = () => {
 
     const updatedOp: StockOperation = { ...op, [field]: validatedValue };
 
-    // Recalculate estimated closing stock
-    if (['additional_stock', 'sales', 'stolen_stock', 'wastage_stock'].includes(field)) {
-      updatedOp.estimated_closing_stock =
-        updatedOp.opening_stock +
-        updatedOp.additional_stock -
-        updatedOp.sales -
-        updatedOp.stolen_stock -
-        updatedOp.wastage_stock;
+    // Recalculate estimated closing stock based on opening + additional - order_count
+    if (['opening_stock', 'additional_stock', 'order_count'].includes(field)) {
+      updatedOp.estimated_closing_stock = computeEstimatedClosing(
+        updatedOp.opening_stock,
+        updatedOp.additional_stock,
+        updatedOp.order_count
+      );
+    }
 
-      // Auto-update actual closing stock if it matches the previous estimated value
-      if (op.actual_closing_stock === op.estimated_closing_stock) {
-        updatedOp.actual_closing_stock = updatedOp.estimated_closing_stock;
-      }
+    // Recalculate stolen stock based on estimated - actual - wastage
+    if (['actual_closing_stock', 'wastage_stock', 'opening_stock', 'additional_stock', 'order_count'].includes(field)) {
+      updatedOp.stolen_stock = computeStolenStock(
+        updatedOp.estimated_closing_stock,
+        updatedOp.actual_closing_stock,
+        updatedOp.wastage_stock
+      );
+    }
+
+    // Update sales amount when order count changes
+    if (field === 'order_count') {
+      const unitPrice = updatedOp.product?.unit_price || updatedOp.product?.price || 0;
+      updatedOp.sales = computeSalesAmount(unitPrice, updatedOp.order_count);
+    }
+
+    // Auto-update actual closing stock if it matches the previous estimated value
+    if (op.actual_closing_stock === op.estimated_closing_stock) {
+      updatedOp.actual_closing_stock = updatedOp.estimated_closing_stock;
     }
 
     updateOperation(operationId, productId, updatedOp);
@@ -527,6 +619,20 @@ const AdminStockAccounting = () => {
 
   const handleSave = useCallback(async () => {
     if (!stockOperations.length) return;
+
+    // Validate constraint: Actual + Wastage should not exceed Estimated
+    const invalidOp = stockOperations.find(op => {
+      const { estimated, exceedsEstimated, exceedsWithWastage } = getValidationIssues(op);
+      return exceedsEstimated || exceedsWithWastage || (op.actual_closing_stock || 0) + (op.wastage_stock || 0) > estimated;
+    });
+    if (invalidOp) {
+      toast({
+        title: 'Validation Error',
+        description: `Validation failed for ${invalidOp.product?.name || 'a product'}. Actual and Wastage must not exceed Estimated Closing.`,
+        variant: 'destructive',
+      });
+      return;
+    }
 
     setSaving(true);
     try {
@@ -537,15 +643,19 @@ const AdminStockAccounting = () => {
       const existingOperations: StockOperationRow[] = [];
 
       stockOperations.forEach(({ product, ...op }) => {
+        const unitPrice = product?.unit_price || product?.price || 0;
+        const estimatedClosing = computeEstimatedClosing(op.opening_stock, op.additional_stock, op.order_count);
+        const stolenStock = computeStolenStock(estimatedClosing, op.actual_closing_stock, op.wastage_stock);
+        const salesAmount = computeSalesAmount(unitPrice, op.order_count);
         const cleanOp: StockOperationRow = {
           ...op,
           opening_stock: Number(op.opening_stock) || 0,
           additional_stock: Number(op.additional_stock) || 0,
           actual_closing_stock: Number(op.actual_closing_stock) || 0,
-          estimated_closing_stock: Number(op.estimated_closing_stock) || 0,
-          stolen_stock: Number(op.stolen_stock) || 0,
+          estimated_closing_stock: Number(estimatedClosing) || 0,
+          stolen_stock: Number(stolenStock) || 0,
           wastage_stock: Number(op.wastage_stock) || 0,
-          sales: Number(op.sales) || 0,
+          sales: Number(salesAmount) || 0,
           order_count: Number(op.order_count) || 0,
           created_at: op.created_at || todayFormatted,
           updated_at: todayFormatted
@@ -651,7 +761,7 @@ const AdminStockAccounting = () => {
     } finally {
       setSaving(false);
     }
-  }, [stockOperations, toast, loadStockOperations, errorMessages, user?.id, profile?.name]);
+  }, [stockOperations, toast, loadStockOperations, errorMessages, user?.id, profile?.name, computeEstimatedClosing, computeSalesAmount, computeStolenStock, getValidationIssues]);
 
   if (loading) {
     return (
@@ -822,6 +932,7 @@ const AdminStockAccounting = () => {
                     <TableHead>Product</TableHead>
                     <TableHead>Opening Stock</TableHead>
                     <TableHead>Additional Stock</TableHead>
+                    <TableHead>Sold Qty</TableHead>
                     <TableHead>Estimated Closing Stock</TableHead>
                     <TableHead>Actual Closing Stock</TableHead>
                     <TableHead>Wastage</TableHead>
@@ -832,7 +943,7 @@ const AdminStockAccounting = () => {
                 <TableBody>
                   {filteredOperations.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-8 text-gray-500">
+                      <TableCell colSpan={9} className="text-center py-8 text-gray-500">
                         No stock operations found for the selected filters.
                       </TableCell>
                     </TableRow>
@@ -840,18 +951,20 @@ const AdminStockAccounting = () => {
                     filteredOperations.map((operation, index) => {
                       // Calculate sales revenue from actual orders
                       const unitPrice = operation.product?.unit_price || operation.product?.price || 0;
-                      const sales = (operation.order_count || 0) * unitPrice;
-                      // Calculate estimated closing stock (based on order count in units)
-                      const estimatedClosingStock =
-                        (operation.opening_stock || 0) +
-                        (operation.additional_stock || 0) -
-                        (operation.order_count || 0);
-                      // Calculate stolen stock as estimated_closing_stock - actual_closing_stock - wastage_stock
-                      const stolenStock = Math.max(0,
-                        estimatedClosingStock - (operation.actual_closing_stock || 0) - (operation.wastage_stock || 0)
+                      const sales = computeSalesAmount(unitPrice, operation.order_count || 0);
+                      // Calculate estimated closing stock (based on sold quantity)
+                      const { estimated, exceedsEstimated, exceedsWithWastage } = getValidationIssues(operation);
+                      const hasValidationError = exceedsEstimated || exceedsWithWastage;
+                      const stolenStock = computeStolenStock(
+                        estimated,
+                        operation.actual_closing_stock || 0,
+                        operation.wastage_stock || 0
                       );
                       return (
-                        <TableRow key={operation.id || `temp-${operation.product_id}-${index}`}>
+                        <TableRow
+                          key={operation.id || `temp-${operation.product_id}-${index}`}
+                          className={hasValidationError ? 'bg-red-50' : undefined}
+                        >
                           <TableCell className="font-medium">
                             {operation.product?.name || 'Unknown Product'}
                             <br />
@@ -859,7 +972,8 @@ const AdminStockAccounting = () => {
                           </TableCell>
                           <TableCell>{operation.opening_stock}</TableCell>
                           <TableCell>{operation.additional_stock}</TableCell>
-                          <TableCell className="text-right font-medium">{estimatedClosingStock}</TableCell>
+                          <TableCell>{operation.order_count}</TableCell>
+                          <TableCell className="text-right font-medium">{estimated}</TableCell>
                           <TableCell>
                             <Input
                               type="number"
@@ -868,6 +982,11 @@ const AdminStockAccounting = () => {
                               onChange={(e) => handleOperationChange(operation.id, operation.product_id, 'actual_closing_stock', Number(e.target.value) || 0)}
                               className="text-right"
                             />
+                            {exceedsEstimated && (
+                              <div className="text-xs text-red-600 mt-1">
+                                Actual exceeds estimated.
+                              </div>
+                            )}
                           </TableCell>
                           <TableCell>
                             <Input
@@ -877,6 +996,11 @@ const AdminStockAccounting = () => {
                               onChange={(e) => handleOperationChange(operation.id, operation.product_id, 'wastage_stock', Number(e.target.value) || 0)}
                               className="text-right"
                             />
+                            {!exceedsEstimated && exceedsWithWastage && (
+                              <div className="text-xs text-red-600 mt-1">
+                                Actual + Wastage exceeds estimated.
+                              </div>
+                            )}
                           </TableCell>
                           <TableCell className="text-right font-medium">{stolenStock}</TableCell>
                           <TableCell>₹{sales.toLocaleString()}</TableCell>
@@ -915,10 +1039,15 @@ const AdminStockAccounting = () => {
 
       {/* Save Button */}
       <div className="flex justify-end">
+        {hasValidationErrors && (
+          <div className="mr-4 text-sm text-red-600 self-center">
+            Fix validation errors before saving.
+          </div>
+        )}
         <Button
           variant="default"
           onClick={handleSave}
-          disabled={saving}
+          disabled={saving || hasValidationErrors}
         >
           {saving ? <Loader2 className="animate-spin" /> : <Save />}
           {saving ? 'Saving...' : 'Save Operations'}

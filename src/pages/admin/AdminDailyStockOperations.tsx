@@ -21,7 +21,6 @@ type ProductDB = {
   created_by?: string | null;
   image_url?: string | null;
   is_archived?: boolean | null;
-  opening_stock?: number | null;
   status?: string | null;
   unit_price?: number | null;
   updated_at?: string | null;
@@ -66,6 +65,13 @@ const AdminDailyStockOperations: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const { toast } = useToast();
   const today = new Date().toISOString().split('T')[0];
+  const getLocalDayRange = () => {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    return { start, end };
+  };
 
   // Load products and today's operations, then merge them
   const loadData = useCallback(async () => {
@@ -81,10 +87,12 @@ const AdminDailyStockOperations: React.FC = () => {
       if (!products) throw new Error('No products found');
 
       // Fetch today's stock operations
+      const { start, end } = getLocalDayRange();
       const { data: opsRaw, error: opsError } = await supabase
         .from('daily_stock_operations')
         .select('*')
-        .eq('created_at', today);
+        .gte('created_at', start.toISOString())
+        .lt('created_at', end.toISOString());
       const ops: StockOperationDB[] = opsRaw || [];
 
       if (opsError) throw opsError;

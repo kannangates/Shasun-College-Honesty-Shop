@@ -6,7 +6,6 @@ interface Product {
   name: string;
   category: string;
   unit_price: number;
-  opening_stock: number;
   warehouse_stock: number;
   shelf_stock: number;
   status: string;

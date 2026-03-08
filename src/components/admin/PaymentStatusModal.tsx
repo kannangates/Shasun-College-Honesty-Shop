@@ -109,9 +109,14 @@ export const PaymentStatusModal = ({ open, onOpenChange, onStatusUpdated, orderD
         }
       );
 
+      const responseData = await response.json().catch(() => ({}));
+
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to update payment status');
+        throw new Error(responseData.error || 'Failed to update payment status');
+      }
+
+      if (!responseData?.order || responseData.order.payment_status !== formData.payment_status) {
+        throw new Error('Payment status update did not persist. Please retry.');
       }
 
       toast({
