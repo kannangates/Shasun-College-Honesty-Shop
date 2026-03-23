@@ -420,7 +420,7 @@ const AdminStockAccounting = () => {
           const openingStock = previousClosingStockMap.get(product.id) ?? product.shelf_stock;
           const orderQty = todaySoldQtyMap.get(product.id) ?? 0;
           const estimatedClosing = computeEstimatedClosing(openingStock, 0, orderQty);
-          const stolenStock = computeStolenStock(estimatedClosing, openingStock, 0);
+          const stolenStock = computeStolenStock(estimatedClosing, estimatedClosing, 0);
           const unitPrice = product.unit_price || 0;
           const salesAmount = computeSalesAmount(unitPrice, orderQty);
 
@@ -430,7 +430,7 @@ const AdminStockAccounting = () => {
             product,
             opening_stock: openingStock,
             additional_stock: 0,
-            actual_closing_stock: openingStock,
+            actual_closing_stock: estimatedClosing,
             estimated_closing_stock: estimatedClosing,
             stolen_stock: stolenStock,
             wastage_stock: 0,
