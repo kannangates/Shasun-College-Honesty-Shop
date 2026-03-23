@@ -397,9 +397,12 @@ const AdminStockAccounting = () => {
             op.additional_stock || 0,
             orderQty
           );
+          // Always default actual_closing_stock to estimated_closing_stock
+          // Users can edit it if the actual value differs
+          const actualClosingStock = estimatedClosing;
           const stolenStock = computeStolenStock(
             estimatedClosing,
-            op.actual_closing_stock || 0,
+            actualClosingStock,
             op.wastage_stock || 0
           );
           const unitPrice = product.unit_price || 0;
@@ -408,6 +411,7 @@ const AdminStockAccounting = () => {
             ...op,
             order_count: orderQty,
             estimated_closing_stock: estimatedClosing,
+            actual_closing_stock: actualClosingStock,
             stolen_stock: stolenStock,
             sales: salesAmount,
             product,
