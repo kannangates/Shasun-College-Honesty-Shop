@@ -71,7 +71,7 @@ serve(async (req) => {
 
     const { userId, newRole } = validationResult.data;
 
-    // Update role in users table
+    // Update role in users table (this will trigger sync to user_roles table)
     const { error: updateError } = await supabase
       .from("users")
       .update({ role: newRole })
@@ -83,6 +83,24 @@ serve(async (req) => {
         JSON.stringify({ error: "Failed to update role in database" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // Explicitly update user_roles table (backup in case trigger fails)
+    // First delete old role
+    await supabase
+      .from("user_roles")
+      .delete()
+      .eq("user_id", userId);
+
+    // Then insert new role
+    const { error: userRolesError } = await supabase
+      .from("user_roles")
+      .insert({ user_id: userId, role: newRole });
+
+    if (userRolesError) {
+      console.error("Error updating user_roles table:", userRolesError);
+      // Don't fail the request since the users table was updated and trigger should handle it
+      console.warn("Role updated in users table but user_roles sync failed");
     }
     // Get current user metadata
     const { data: targetUser, error: getUserError } = await supabase.auth.admin.getUserById(userId);

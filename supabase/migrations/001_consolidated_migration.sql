@@ -111,7 +111,7 @@ USING (get_current_user_role() = ANY (ARRAY['admin'::user_role, 'developer'::use
 CREATE POLICY "Admins can manage daily stock operations" 
 ON public.daily_stock_operations 
 FOR ALL 
-USING (get_current_user_role() = ANY (ARRAY['admin'::user_role, 'developer'::user_role]));
+USING (get_current_user_role() = ANY (ARRAY['admin'::user_role, 'developer'::user_role, 'teacher'::user_role]));
 
 CREATE POLICY "Admins can manage integration settings" 
 ON public.integration_settings 
@@ -931,7 +931,13 @@ DROP POLICY IF EXISTS "Admins can manage daily stock operations" ON public.daily
 CREATE POLICY "Admins can manage daily stock operations" ON public.daily_stock_operations
   FOR ALL USING (
     has_app_role(auth.uid(), 'admin') OR 
-    has_app_role(auth.uid(), 'developer')
+    has_app_role(auth.uid(), 'developer') OR
+    has_app_role(auth.uid(), 'teacher')
+  )
+  WITH CHECK (
+    has_app_role(auth.uid(), 'admin') OR 
+    has_app_role(auth.uid(), 'developer') OR
+    has_app_role(auth.uid(), 'teacher')
   );
 
 -- GAMIFICATION_EVENT_LOGS TABLE
