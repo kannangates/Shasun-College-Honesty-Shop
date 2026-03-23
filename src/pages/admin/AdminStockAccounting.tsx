@@ -668,9 +668,13 @@ const AdminStockAccounting = () => {
         };
 
         if (op.id) {
-          existingOperations.push(cleanOp);
+          // For existing operations, keep the id for upsert
+          existingOperations.push({ ...cleanOp, id: op.id });
         } else {
-          newOperations.push(cleanOp);
+          // For new operations, don't send id (let database generate it)
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { id, ...newOp } = cleanOp;
+          newOperations.push(newOp as typeof cleanOp);
         }
       });
 
