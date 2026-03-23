@@ -647,7 +647,7 @@ const AdminStockAccounting = () => {
       const todayFormatted = new Date().toISOString().split('T')[0];
 
       // Separate new operations from existing ones
-      const newOperations: Omit<StockOperationRow, 'updated_at' | 'stolen_stock' | 'sales' | 'estimated_closing_stock'>[] = [];
+      const newOperations: Omit<StockOperationRow, 'id' | 'updated_at' | 'stolen_stock' | 'sales' | 'estimated_closing_stock'>[] = [];
       const existingOperations: Omit<StockOperationRow, 'updated_at' | 'stolen_stock' | 'sales' | 'estimated_closing_stock'>[] = [];
 
       stockOperations.forEach(({ product, ...op }) => {
@@ -656,25 +656,34 @@ const AdminStockAccounting = () => {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { updated_at, stolen_stock, sales, estimated_closing_stock, ...opWithoutGenerated } = op;
 
-        const cleanOp: Omit<StockOperationRow, 'updated_at' | 'stolen_stock' | 'sales' | 'estimated_closing_stock'> = {
-          ...opWithoutGenerated,
-          opening_stock: Number(op.opening_stock) || 0,
-          additional_stock: Number(op.additional_stock) || 0,
-          actual_closing_stock: Number(op.actual_closing_stock) || 0,
-          wastage_stock: Number(op.wastage_stock) || 0,
-          order_count: Number(op.order_count) || 0,
-          created_at: op.created_at || todayFormatted,
-          updated_by: user?.id || null
-        };
-
         if (op.id) {
-          // For existing operations, keep the id for upsert
-          existingOperations.push({ ...cleanOp, id: op.id });
+          // For existing operations (upsert), include all fields including id
+          const cleanOp: Omit<StockOperationRow, 'updated_at' | 'stolen_stock' | 'sales' | 'estimated_closing_stock'> = {
+            ...opWithoutGenerated,
+            id: op.id,
+            opening_stock: Number(op.opening_stock) || 0,
+            additional_stock: Number(op.additional_stock) || 0,
+            actual_closing_stock: Number(op.actual_closing_stock) || 0,
+            wastage_stock: Number(op.wastage_stock) || 0,
+            order_count: Number(op.order_count) || 0,
+            created_at: op.created_at || todayFormatted,
+            updated_by: user?.id || null
+          };
+          existingOperations.push(cleanOp);
         } else {
-          // For new operations, don't send id (let database generate it)
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const { id, ...newOp } = cleanOp;
-          newOperations.push(newOp as typeof cleanOp);
+          // For new operations (insert), exclude id - let database generate it
+          const cleanOp: Omit<StockOperationRow, 'id' | 'updated_at' | 'stolen_stock' | 'sales' | 'estimated_closing_stock'> = {
+            product_id: op.product_id,
+            opening_stock: Number(op.opening_stock) || 0,
+            additional_stock: Number(op.additional_stock) || 0,
+            actual_closing_stock: Number(op.actual_closing_stock) || 0,
+            wastage_stock: Number(op.wastage_stock) || 0,
+            warehouse_stock: op.warehouse_stock,
+            order_count: Number(op.order_count) || 0,
+            created_at: op.created_at || todayFormatted,
+            updated_by: user?.id || null
+          };
+          newOperations.push(cleanOp);
         }
       });
 
