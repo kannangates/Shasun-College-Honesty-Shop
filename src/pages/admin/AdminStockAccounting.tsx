@@ -647,16 +647,21 @@ const AdminStockAccounting = () => {
       const todayFormatted = new Date().toISOString().split('T')[0];
 
       // Separate new operations from existing ones
-      const newOperations: StockOperationRow[] = [];
-      const existingOperations: StockOperationRow[] = [];
+      const newOperations: Omit<StockOperationRow, 'updated_at'>[] = [];
+      const existingOperations: Omit<StockOperationRow, 'updated_at'>[] = [];
 
       stockOperations.forEach(({ product, ...op }) => {
         const unitPrice = product?.unit_price || product?.price || 0;
         const estimatedClosing = computeEstimatedClosing(op.opening_stock, op.additional_stock, op.order_count);
         const stolenStock = computeStolenStock(estimatedClosing, op.actual_closing_stock, op.wastage_stock);
         const salesAmount = computeSalesAmount(unitPrice, op.order_count);
-        const cleanOp: StockOperationRow = {
-          ...op,
+
+        // Remove updated_at from op since it's handled by the database trigger
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { updated_at, ...opWithoutUpdatedAt } = op;
+
+        const cleanOp: Omit<StockOperationRow, 'updated_at'> = {
+          ...opWithoutUpdatedAt,
           opening_stock: Number(op.opening_stock) || 0,
           additional_stock: Number(op.additional_stock) || 0,
           actual_closing_stock: Number(op.actual_closing_stock) || 0,
