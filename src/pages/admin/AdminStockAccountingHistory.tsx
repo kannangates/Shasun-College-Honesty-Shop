@@ -109,16 +109,18 @@ const AdminStockAccountingHistory = () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const start = new Date(startDate);
+    start.setHours(0, 0, 0, 0);
     const end = new Date(endDate);
+    end.setHours(0, 0, 0, 0);
 
-    // Check if start date is in the future
-    if (start > today) {
+    // Check if start date is in the future (compare timestamps to avoid time component issues)
+    if (start.getTime() > today.getTime()) {
       setDateError('Start date cannot be in the future');
       return false;
     }
 
     // Check if end date is before start date
-    if (end < start) {
+    if (end.getTime() < start.getTime()) {
       setDateError('End date must be on or after start date');
       return false;
     }

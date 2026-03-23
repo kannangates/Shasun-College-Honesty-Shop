@@ -651,34 +651,30 @@ const AdminStockAccounting = () => {
       const existingOperations: Omit<StockOperationRow, 'updated_at' | 'stolen_stock' | 'sales' | 'estimated_closing_stock'>[] = [];
 
       stockOperations.forEach(({ product, ...op }) => {
-        // Remove updated_at, stolen_stock, sales, and estimated_closing_stock from op 
-        // These are either handled by triggers or are generated columns
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { updated_at, stolen_stock, sales, estimated_closing_stock, ...opWithoutGenerated } = op;
-
         if (op.id) {
-          // For existing operations (upsert), include all fields including id
+          // For existing operations (upsert), include id and all editable fields
           const cleanOp: Omit<StockOperationRow, 'updated_at' | 'stolen_stock' | 'sales' | 'estimated_closing_stock'> = {
-            ...opWithoutGenerated,
             id: op.id,
+            product_id: op.product_id,
             opening_stock: Number(op.opening_stock) || 0,
             additional_stock: Number(op.additional_stock) || 0,
             actual_closing_stock: Number(op.actual_closing_stock) || 0,
             wastage_stock: Number(op.wastage_stock) || 0,
+            warehouse_stock: Number(op.warehouse_stock) || 0,
             order_count: Number(op.order_count) || 0,
             created_at: op.created_at || todayFormatted,
             updated_by: user?.id || null
           };
           existingOperations.push(cleanOp);
         } else {
-          // For new operations (insert), exclude id - let database generate it
+          // For new operations (insert), exclude id and generated columns - let database handle them
           const cleanOp: Omit<StockOperationRow, 'id' | 'updated_at' | 'stolen_stock' | 'sales' | 'estimated_closing_stock'> = {
             product_id: op.product_id,
             opening_stock: Number(op.opening_stock) || 0,
             additional_stock: Number(op.additional_stock) || 0,
             actual_closing_stock: Number(op.actual_closing_stock) || 0,
             wastage_stock: Number(op.wastage_stock) || 0,
-            warehouse_stock: op.warehouse_stock,
+            warehouse_stock: Number(op.warehouse_stock) || 0,
             order_count: Number(op.order_count) || 0,
             created_at: op.created_at || todayFormatted,
             updated_by: user?.id || null
