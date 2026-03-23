@@ -686,7 +686,7 @@ const AdminStockAccounting = () => {
         const { error: insertError } = await supabase
           .from('daily_stock_operations')
           .insert(newOperations)
-          .select('id, product_id, opening_stock, additional_stock, actual_closing_stock, estimated_closing_stock, stolen_stock, wastage_stock, warehouse_stock, sales, order_count, created_at, created_by');
+          .select('id, product_id, opening_stock, additional_stock, actual_closing_stock, estimated_closing_stock, stolen_stock, wastage_stock, warehouse_stock, sales, order_count, created_at, created_by, updated_by');
         if (insertError) throw insertError;
       }
 
@@ -695,7 +695,7 @@ const AdminStockAccounting = () => {
         const { error: updateError } = await supabase
           .from('daily_stock_operations')
           .upsert(existingOperations, { onConflict: 'id' })
-          .select('id, product_id, opening_stock, additional_stock, actual_closing_stock, estimated_closing_stock, stolen_stock, wastage_stock, warehouse_stock, sales, order_count, created_at, created_by');
+          .select('id, product_id, opening_stock, additional_stock, actual_closing_stock, estimated_closing_stock, stolen_stock, wastage_stock, warehouse_stock, sales, order_count, created_at, created_by, updated_by');
         if (updateError) throw updateError;
       }
 
