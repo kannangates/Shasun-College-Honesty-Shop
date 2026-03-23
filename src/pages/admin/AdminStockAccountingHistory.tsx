@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { History, Calendar, AlertTriangle, Loader2, Filter, Download } from 'lucide-react';
+import { History, AlertTriangle, Loader2, Filter, Download } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { supabase } from '@/integrations/supabase/client';
@@ -106,15 +106,19 @@ const AdminStockAccountingHistory = () => {
       return false;
     }
 
+    // Create dates from the input strings (YYYY-MM-DD format)
+    // Date inputs are in local timezone, so we parse them as local dates
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const start = new Date(startDate);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(endDate);
-    end.setHours(0, 0, 0, 0);
+    const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
-    // Check if start date is in the future (compare timestamps to avoid time component issues)
-    if (start.getTime() > today.getTime()) {
+    const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
+    const start = new Date(startYear, startMonth - 1, startDay);
+
+    const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
+    const end = new Date(endYear, endMonth - 1, endDay);
+
+    // Check if start date is in the future
+    if (start.getTime() > todayDateOnly.getTime()) {
       setDateError('Start date cannot be in the future');
       return false;
     }
@@ -301,10 +305,8 @@ const AdminStockAccountingHistory = () => {
     const uniqueProductIds = new Set(filtered.map(r => r.product_id));
     const totalProducts = uniqueProductIds.size;
 
-    const totalSalesValue = filtered.reduce((sum, r) => {
-      const unitPrice = r.product.unit_price || r.product.price || 0;
-      return sum + (r.sales * unitPrice);
-    }, 0);
+    // sales column already contains the total sales value (order_count * unit_price)
+    const totalSalesValue = filtered.reduce((sum, r) => sum + (r.sales || 0), 0);
 
     const totalWastageUnits = filtered.reduce((sum, r) => sum + r.wastage_stock, 0);
     const totalStolenUnits = filtered.reduce((sum, r) => sum + r.stolen_stock, 0);
