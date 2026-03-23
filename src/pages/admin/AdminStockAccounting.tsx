@@ -52,6 +52,7 @@ interface StockOperationRow {
   order_count: number;
   created_at: string;
   updated_at?: string | null;
+  updated_by?: string | null;
 }
 
 // Stock operation as used in UI (with product field)
@@ -364,12 +365,14 @@ const AdminStockAccounting = () => {
       });
 
       // Type assertion for operationsData with proper handling
-      const opsData: StockOperationRow[] = (operationsData ?? []).map((op: Omit<StockOperationRow, 'updated_at' | 'warehouse_stock'> & {
+      const opsData: StockOperationRow[] = (operationsData ?? []).map((op: Omit<StockOperationRow, 'updated_at' | 'updated_by' | 'warehouse_stock'> & {
         updated_at?: string | null;
+        updated_by?: string | null;
         warehouse_stock?: number;
       }) => ({
         ...op,
         updated_at: op.updated_at || null,
+        updated_by: op.updated_by || null,
         warehouse_stock: op.warehouse_stock || 0
       }));
 
@@ -439,6 +442,7 @@ const AdminStockAccounting = () => {
             order_count: orderQty,
             created_at: todayFormatted,
             updated_at: null,
+            updated_by: null,
           });
         }
       });
@@ -658,7 +662,7 @@ const AdminStockAccounting = () => {
           sales: Number(salesAmount) || 0,
           order_count: Number(op.order_count) || 0,
           created_at: op.created_at || todayFormatted,
-          updated_at: todayFormatted
+          updated_by: user?.id || null
         };
 
         if (op.id) {

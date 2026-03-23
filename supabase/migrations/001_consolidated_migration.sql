@@ -122,6 +122,28 @@ USING (get_current_user_role() = ANY (ARRAY['admin'::user_role, 'developer'::use
 ALTER TABLE public.daily_stock_operations 
 ADD COLUMN IF NOT EXISTS warehouse_stock integer DEFAULT 0;
 
+-- Add updated_at and updated_by columns to daily_stock_operations
+ALTER TABLE public.daily_stock_operations 
+ADD COLUMN IF NOT EXISTS updated_at timestamp with time zone DEFAULT now();
+
+ALTER TABLE public.daily_stock_operations 
+ADD COLUMN IF NOT EXISTS updated_by uuid REFERENCES auth.users(id);
+
+-- Create trigger to automatically update updated_at timestamp
+CREATE OR REPLACE FUNCTION public.update_daily_stock_operations_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS update_daily_stock_operations_updated_at_trigger ON public.daily_stock_operations;
+CREATE TRIGGER update_daily_stock_operations_updated_at_trigger
+  BEFORE UPDATE ON public.daily_stock_operations
+  FOR EACH ROW
+  EXECUTE FUNCTION public.update_daily_stock_operations_updated_at();
+
 -- ============================================
 -- SECTION 3: Friendly Order IDs
 -- ============================================

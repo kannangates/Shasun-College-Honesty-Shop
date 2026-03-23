@@ -183,6 +183,8 @@ export type Database = {
           product_id: string | null
           sales: number | null
           stolen_stock: number | null
+          updated_at: string | null
+          updated_by: string | null
           warehouse_stock: number | null
           wastage_stock: number
         }
@@ -198,6 +200,8 @@ export type Database = {
           product_id?: string | null
           sales?: number | null
           stolen_stock?: number | null
+          updated_at?: string | null
+          updated_by?: string | null
           warehouse_stock?: number | null
           wastage_stock: number
         }
@@ -213,6 +217,8 @@ export type Database = {
           product_id?: string | null
           sales?: number | null
           stolen_stock?: number | null
+          updated_at?: string | null
+          updated_by?: string | null
           warehouse_stock?: number | null
           wastage_stock?: number
         }
