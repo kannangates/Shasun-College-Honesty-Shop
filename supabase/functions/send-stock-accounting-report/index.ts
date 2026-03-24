@@ -4,6 +4,7 @@ import { corsHeaders } from '../_shared/cors.ts';
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 const REPORT_KEY = 'stock_accounting_history';
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 type Frequency = 'daily' | 'weekly' | 'monthly';
 
@@ -101,6 +102,26 @@ const formatDate = (date: Date): string => {
   return `${year}-${month}-${day}`;
 };
 
+const formatDisplayDate = (dateText: string): string => {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateText)) {
+    const [yearText, monthText, dayText] = dateText.split('-');
+    const year = Number(yearText);
+    const month = Number(monthText);
+    const day = Number(dayText);
+    return `${String(day).padStart(2, '0')}-${MONTH_SHORT[Math.max(0, month - 1)]}-${year}`;
+  }
+
+  const parsed = new Date(dateText);
+  if (!Number.isNaN(parsed.getTime())) {
+    const year = parsed.getUTCFullYear();
+    const month = parsed.getUTCMonth() + 1;
+    const day = parsed.getUTCDate();
+    return `${String(day).padStart(2, '0')}-${MONTH_SHORT[Math.max(0, month - 1)]}-${year}`;
+  }
+
+  return dateText;
+};
+
 const toBase64Utf8 = (content: string): string => {
   const bytes = new TextEncoder().encode(content);
   let binary = '';
@@ -173,7 +194,7 @@ const getCsvContent = (rows: ReportRow[]): string => {
   ];
 
   const csvRows = rows.map((row) => [
-    row.date,
+    formatDisplayDate(row.date),
     row.productName,
     row.category,
     row.operator,
@@ -483,7 +504,7 @@ const getSubject = (frequency: Frequency | 'manual', startDate: string, endDate:
   const freqLabel = frequency === 'manual'
     ? 'Manual'
     : frequency.charAt(0).toUpperCase() + frequency.slice(1);
-  return `Stock Accounting Report (${freqLabel}) - ${startDate} to ${endDate}`;
+  return `Stock Accounting Report (${freqLabel}) - ${formatDisplayDate(startDate)} to ${formatDisplayDate(endDate)}`;
 };
 
 const getBodyContent = (
@@ -494,6 +515,8 @@ const getBodyContent = (
   paymentSummary: PaymentSummary,
   topProducts: TopProductSummary[],
 ) => {
+  const displayStartDate = formatDisplayDate(startDate);
+  const displayEndDate = formatDisplayDate(endDate);
   const topProductsPlainText = topProducts.length > 0
     ? topProducts
       .map((item, index) => `${index + 1}. ${item.productName} - ${item.soldQty} units (₹${item.salesValue.toFixed(2)})`)
@@ -521,7 +544,7 @@ const getBodyContent = (
 
   const plainTextBody = [
     'Stock Accounting Report',
-    `Period: ${startDate} to ${endDate}`,
+    `Period: ${displayStartDate} to ${displayEndDate}`,
     `Filters: ${filtersText}`,
     `Products Tracked: ${summary.totalProducts}`,
     `Rows: ${summary.totalRows}`,
@@ -545,7 +568,7 @@ const getBodyContent = (
   const htmlBody = `
     <div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto;">
       <h2 style="color:#202072; margin-bottom:8px;">Stock Accounting Report</h2>
-      <p style="margin:0 0 12px 0;"><strong>Period:</strong> ${startDate} to ${endDate}</p>
+      <p style="margin:0 0 12px 0;"><strong>Period:</strong> ${displayStartDate} to ${displayEndDate}</p>
       <p style="margin:0 0 12px 0;"><strong>Filters:</strong> ${filtersText}</p>
       <table style="border-collapse: collapse; width: 100%; margin-top: 8px;">
         <tr>
@@ -641,7 +664,7 @@ const handleManualSend = async (
   const filtersText = `category=${payload.filters?.category || 'all'}, operator=${payload.filters?.operator || 'all'}, product=${payload.filters?.product || 'all'}`;
   const subject = getSubject('manual', payload.startDate, payload.endDate);
   const csvContent = getCsvContent(filteredRows);
-  const csvFilename = `stock-accounting-${payload.startDate}-to-${payload.endDate}.csv`;
+  const csvFilename = `stock-accounting-${formatDisplayDate(payload.startDate)}-to-${formatDisplayDate(payload.endDate)}.csv`;
   const { plainTextBody, htmlBody } = getBodyContent(
     summary,
     payload.startDate,
@@ -730,7 +753,7 @@ const runSchedule = async (
     );
     const subject = getSubject(schedule.frequency, period.startDate, period.endDate);
     const csvContent = getCsvContent(rows);
-    const csvFilename = `stock-accounting-${schedule.frequency}-${period.startDate}-to-${period.endDate}.csv`;
+    const csvFilename = `stock-accounting-${schedule.frequency}-${formatDisplayDate(period.startDate)}-to-${formatDisplayDate(period.endDate)}.csv`;
     const { plainTextBody, htmlBody } = getBodyContent(
       summary,
       period.startDate,
