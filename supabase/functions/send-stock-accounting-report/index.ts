@@ -61,7 +61,25 @@ const scheduledDispatchSchema = z.object({
   operation: z.literal('scheduled_dispatch'),
 });
 
-const requestSchema = z.discriminatedUnion('operation', [manualSendSchema, scheduledDispatchSchema]);
+const getScheduleRecipientsSchema = z.object({
+  operation: z.literal('get_schedule_recipients'),
+});
+
+const updateScheduleRecipientsSchema = z.object({
+  operation: z.literal('update_schedule_recipients'),
+  recipients: z.object({
+    daily: z.array(z.string().email()),
+    weekly: z.array(z.string().email()),
+    monthly: z.array(z.string().email()),
+  }),
+});
+
+const requestSchema = z.discriminatedUnion('operation', [
+  manualSendSchema,
+  scheduledDispatchSchema,
+  getScheduleRecipientsSchema,
+  updateScheduleRecipientsSchema,
+]);
 
 const formatDate = (date: Date): string => {
   const year = date.getUTCFullYear();
@@ -185,6 +203,76 @@ const getRoleAccess = async (supabase: SupabaseClient, userId: string): Promise<
 
   const roles = (userRoles || []).map((r) => r.role);
   return roles.includes('admin') || roles.includes('developer');
+};
+
+const normalizeRecipients = (emails: string[]): string[] => {
+  const seen = new Set<string>();
+  return emails
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean)
+    .filter((email) => {
+      if (seen.has(email)) return false;
+      seen.add(email);
+      return true;
+    });
+};
+
+const handleGetScheduleRecipients = async (supabase: SupabaseClient) => {
+  const { data, error } = await supabase
+    .from('report_email_schedules')
+    .select('frequency, recipients')
+    .eq('report_key', REPORT_KEY);
+
+  if (error) throw error;
+
+  const schedules = (data ?? []) as Array<{ frequency: string; recipients: string[] | null }>;
+  const recipientsByFrequency = new Map(
+    schedules.map((schedule) => [schedule.frequency, schedule.recipients ?? []]),
+  );
+
+  return {
+    success: true,
+    recipients: {
+      daily: recipientsByFrequency.get('daily') ?? [],
+      weekly: recipientsByFrequency.get('weekly') ?? [],
+      monthly: recipientsByFrequency.get('monthly') ?? [],
+    },
+  };
+};
+
+const handleUpdateScheduleRecipients = async (
+  supabase: SupabaseClient,
+  payload: z.infer<typeof updateScheduleRecipientsSchema>,
+) => {
+  const updates = [
+    { frequency: 'daily', recipients: normalizeRecipients(payload.recipients.daily) },
+    { frequency: 'weekly', recipients: normalizeRecipients(payload.recipients.weekly) },
+    { frequency: 'monthly', recipients: normalizeRecipients(payload.recipients.monthly) },
+  ] as const;
+
+  for (const update of updates) {
+    const { error } = await supabase
+      .from('report_email_schedules')
+      .upsert(
+        {
+          report_key: REPORT_KEY,
+          frequency: update.frequency,
+          recipients: update.recipients,
+        },
+        { onConflict: 'report_key,frequency' },
+      );
+
+    if (error) throw error;
+  }
+
+  return {
+    success: true,
+    recipients: {
+      daily: updates[0].recipients,
+      weekly: updates[1].recipients,
+      monthly: updates[2].recipients,
+    },
+  };
 };
 
 const getOperationRows = async (
@@ -560,6 +648,22 @@ Deno.serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
+    }
+
+    if (parsed.data.operation === 'get_schedule_recipients') {
+      const result = await handleGetScheduleRecipients(supabase);
+      return new Response(JSON.stringify(result), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (parsed.data.operation === 'update_schedule_recipients') {
+      const result = await handleUpdateScheduleRecipients(supabase, parsed.data);
+      return new Response(JSON.stringify(result), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     if (parsed.data.operation === 'manual_send') {
