@@ -1142,6 +1142,162 @@ CREATE POLICY "Users can update own notification reads"
   USING (auth.uid() = user_id);
 
 -- ============================================
+-- SECTION 15: Stock Report Email Scheduling
+-- ============================================
+
+-- Store schedule configuration for report emails
+CREATE TABLE IF NOT EXISTS public.report_email_schedules (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  report_key text NOT NULL,
+  frequency text NOT NULL CHECK (frequency IN ('daily', 'weekly', 'monthly')),
+  enabled boolean NOT NULL DEFAULT true,
+  recipients text[] NOT NULL DEFAULT '{}',
+  send_time time NOT NULL DEFAULT '07:00:00',
+  timezone text NOT NULL DEFAULT 'Asia/Kolkata',
+  weekly_day integer NOT NULL DEFAULT 1 CHECK (weekly_day BETWEEN 0 AND 6),
+  monthly_mode text NOT NULL DEFAULT 'first_day_previous_month',
+  last_sent_for_period date,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (report_key, frequency)
+);
+
+CREATE TABLE IF NOT EXISTS public.report_email_runs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  schedule_id uuid NOT NULL REFERENCES public.report_email_schedules(id) ON DELETE CASCADE,
+  report_key text NOT NULL,
+  frequency text NOT NULL CHECK (frequency IN ('daily', 'weekly', 'monthly')),
+  period_start date NOT NULL,
+  period_end date NOT NULL,
+  status text NOT NULL CHECK (status IN ('success', 'failed', 'skipped')),
+  error_message text,
+  sent_at timestamptz NOT NULL DEFAULT now(),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS report_email_runs_schedule_period_idx
+  ON public.report_email_runs (schedule_id, period_start, period_end);
+
+CREATE OR REPLACE FUNCTION public.update_report_email_schedules_updated_at()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS update_report_email_schedules_updated_at_trigger ON public.report_email_schedules;
+CREATE TRIGGER update_report_email_schedules_updated_at_trigger
+  BEFORE UPDATE ON public.report_email_schedules
+  FOR EACH ROW
+  EXECUTE FUNCTION public.update_report_email_schedules_updated_at();
+
+ALTER TABLE public.report_email_schedules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.report_email_runs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Admins can manage report email schedules" ON public.report_email_schedules;
+CREATE POLICY "Admins can manage report email schedules"
+  ON public.report_email_schedules
+  FOR ALL
+  USING (
+    has_app_role(auth.uid(), 'admin') OR
+    has_app_role(auth.uid(), 'developer')
+  );
+
+DROP POLICY IF EXISTS "Admins can manage report email runs" ON public.report_email_runs;
+CREATE POLICY "Admins can manage report email runs"
+  ON public.report_email_runs
+  FOR ALL
+  USING (
+    has_app_role(auth.uid(), 'admin') OR
+    has_app_role(auth.uid(), 'developer')
+  );
+
+-- Seed schedules for stock accounting history report
+INSERT INTO public.report_email_schedules (
+  report_key,
+  frequency,
+  enabled,
+  recipients,
+  send_time,
+  timezone,
+  weekly_day,
+  monthly_mode
+)
+VALUES
+  ('stock_accounting_history', 'daily', true, '{}', '07:00:00', 'Asia/Kolkata', 1, 'first_day_previous_month'),
+  ('stock_accounting_history', 'weekly', true, '{}', '07:00:00', 'Asia/Kolkata', 1, 'first_day_previous_month'),
+  ('stock_accounting_history', 'monthly', true, '{}', '07:00:00', 'Asia/Kolkata', 1, 'first_day_previous_month')
+ON CONFLICT (report_key, frequency) DO NOTHING;
+
+-- Cron trigger for stock report dispatch (07:00 IST = 01:30 UTC)
+-- Requires:
+-- 1) pg_cron extension
+-- 2) pg_net extension
+-- 3) Vault secrets STOCK_REPORT_FUNCTION_URL and STOCK_REPORT_CRON_TOKEN
+DO $$
+DECLARE
+  v_jobid integer;
+  v_function_url text;
+  v_cron_token text;
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron')
+     AND EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_net')
+     AND EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'vault') THEN
+
+    BEGIN
+      SELECT decrypted_secret INTO v_function_url
+      FROM vault.decrypted_secrets
+      WHERE name = 'STOCK_REPORT_FUNCTION_URL'
+      LIMIT 1;
+
+      SELECT decrypted_secret INTO v_cron_token
+      FROM vault.decrypted_secrets
+      WHERE name = 'STOCK_REPORT_CRON_TOKEN'
+      LIMIT 1;
+    EXCEPTION WHEN OTHERS THEN
+      v_function_url := NULL;
+      v_cron_token := NULL;
+    END;
+
+    IF v_function_url IS NOT NULL AND v_cron_token IS NOT NULL THEN
+      SELECT jobid INTO v_jobid
+      FROM cron.job
+      WHERE jobname = 'stock_report_dispatch_daily_0700_ist';
+
+      IF v_jobid IS NOT NULL THEN
+        PERFORM cron.unschedule(v_jobid);
+      END IF;
+
+      PERFORM cron.schedule(
+        'stock_report_dispatch_daily_0700_ist',
+        '30 1 * * *',
+        format(
+          $fmt$
+          SELECT net.http_post(
+            url := %L,
+            headers := %L::jsonb,
+            body := '{"operation":"scheduled_dispatch"}'::jsonb
+          );
+          $fmt$,
+          v_function_url,
+          '{"Content-Type":"application/json","x-cron-token":"' || v_cron_token || '"}'
+        )
+      );
+    ELSE
+      RAISE NOTICE 'Skipping stock report cron schedule: missing STOCK_REPORT_FUNCTION_URL or STOCK_REPORT_CRON_TOKEN';
+    END IF;
+  ELSE
+    RAISE NOTICE 'Skipping stock report cron schedule: missing pg_cron/pg_net/vault';
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'Skipping stock report cron schedule: %', SQLERRM;
+END;
+$$;
+
+-- ============================================
 -- MIGRATION COMPLETE
 -- ============================================
 -- This consolidated migration includes:
@@ -1159,4 +1315,5 @@ CREATE POLICY "Users can update own notification reads"
 -- 12. RLS policies updated to use has_app_role()
 -- 13. Function search_path fixes
 -- 14. Notification read policies
+-- 15. Stock report email schedules/runs and cron dispatch
 -- ============================================

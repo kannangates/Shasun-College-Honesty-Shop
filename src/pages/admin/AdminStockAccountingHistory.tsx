@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { History, AlertTriangle, Loader2, Filter, Download } from 'lucide-react';
+import { History, AlertTriangle, Loader2, Filter, Download, Mail } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { supabase } from '@/integrations/supabase/client';
@@ -99,6 +99,7 @@ const AdminStockAccountingHistory = () => {
   });
   const [dateError, setDateError] = useState<string>('');
   const [showLargeRangeWarning, setShowLargeRangeWarning] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState(false);
 
   // Date validation
   const validateDates = (startDate: string, endDate: string): boolean => {
@@ -424,6 +425,84 @@ const AdminStockAccountingHistory = () => {
     loadStockOperations();
   };
 
+  const handleSendEmail = async () => {
+    if (!filters.startDate || !filters.endDate) {
+      toast({
+        title: 'Missing Date Range',
+        description: 'Please select start and end dates before sending email.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const recipientsInput = window.prompt(
+      'Enter recipient email addresses (comma-separated):',
+      ''
+    );
+
+    if (!recipientsInput) return;
+
+    const recipients = recipientsInput
+      .split(',')
+      .map(email => email.trim().toLowerCase())
+      .filter(Boolean);
+
+    if (recipients.length === 0) {
+      toast({
+        title: 'Invalid Recipients',
+        description: 'Please provide at least one valid email address.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const invalidEmail = recipients.find(email => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
+    if (invalidEmail) {
+      toast({
+        title: 'Invalid Email',
+        description: `Invalid recipient address: ${invalidEmail}`,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setSendingEmail(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('send-stock-accounting-report', {
+        body: {
+          operation: 'manual_send',
+          startDate: filters.startDate,
+          endDate: filters.endDate,
+          recipients,
+          filters: {
+            category: filters.category,
+            operator: filters.operator,
+            product: filters.product,
+          },
+        },
+      });
+
+      if (error) throw error;
+      if (!data?.success) {
+        throw new Error(data?.error || 'Failed to send stock accounting report email.');
+      }
+
+      toast({
+        title: 'Email Sent',
+        description: `Report sent to ${recipients.length} recipient${recipients.length > 1 ? 's' : ''}.`,
+      });
+    } catch (error) {
+      console.error('Error sending stock accounting report email:', error);
+      toast({
+        title: 'Email Failed',
+        description: error instanceof Error ? error.message : 'Failed to send email report.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -647,16 +726,33 @@ const AdminStockAccountingHistory = () => {
                   : 'Select a date range and click "Load Data" to view stock operations'}
               </CardDescription>
             </div>
-            {filteredRecords.length > 0 && (
-              <Button
-                onClick={handleExport}
-                variant="outline"
-                className="flex items-center gap-2"
-                aria-label={`Export ${filteredRecords.length} stock operation records to CSV`}
-              >
-                <Download className="h-4 w-4" aria-hidden="true" />
-                Export CSV
-              </Button>
+            {(filters.startDate && filters.endDate) && (
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={handleSendEmail}
+                  variant="outline"
+                  disabled={sendingEmail || loading}
+                  className="flex items-center gap-2"
+                  aria-label="Send filtered stock accounting report by email"
+                >
+                  {sendingEmail ? (
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Mail className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  {sendingEmail ? 'Sending...' : 'Send Email'}
+                </Button>
+                <Button
+                  onClick={handleExport}
+                  variant="outline"
+                  disabled={filteredRecords.length === 0}
+                  className="flex items-center gap-2"
+                  aria-label={`Export ${filteredRecords.length} stock operation records to CSV`}
+                >
+                  <Download className="h-4 w-4" aria-hidden="true" />
+                  Export CSV
+                </Button>
+              </div>
             )}
           </div>
         </CardHeader>

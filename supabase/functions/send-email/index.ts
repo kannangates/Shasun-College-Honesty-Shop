@@ -15,7 +15,23 @@ interface EmailRequest {
   replyTo?: string;
   fromName?: string;
   fromEmail?: string;
+  attachments?: Array<{
+    filename: string;
+    contentType: string;
+    base64Content: string;
+  }>;
 }
+
+const toBase64Utf8 = (content: string): string => {
+  const bytes = new TextEncoder().encode(content);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+};
 
 const handler = async (req: Request): Promise<Response> => {
   // Handle CORS preflight requests
@@ -40,7 +56,7 @@ const handler = async (req: Request): Promise<Response> => {
       );
     }
 
-    const { to, subject, htmlBody, plainTextBody, cc, replyTo, fromName, fromEmail } = validationResult.data;
+    const { to, subject, htmlBody, plainTextBody, cc, replyTo, fromName, fromEmail, attachments } = validationResult.data;
 
     // Get Gmail credentials from Supabase secrets
     const gmailUser = Deno.env.get('GMAIL_USER');
@@ -76,6 +92,7 @@ const handler = async (req: Request): Promise<Response> => {
 
     // Construct email
     const fromAddress = fromEmail || gmailUser;
+    const hasAttachments = Boolean(attachments && attachments.length > 0);
     const emailHeaders = [
       `From: ${fromName} <${fromAddress}>`,
       `To: ${finalTo}`,
@@ -83,26 +100,59 @@ const handler = async (req: Request): Promise<Response> => {
       replyTo ? `Reply-To: ${replyTo}` : '',
       `Subject: ${subject}`,
       'MIME-Version: 1.0',
-      'Content-Type: multipart/alternative; boundary="boundary123"'
+      hasAttachments
+        ? 'Content-Type: multipart/mixed; boundary="mixedBoundary456"'
+        : 'Content-Type: multipart/alternative; boundary="altBoundary123"'
     ].filter(Boolean).join('\r\n');
 
-    const emailBody = [
+    const alternativeBody = hasAttachments
+      ? [
+        '--mixedBoundary456',
+        'Content-Type: multipart/alternative; boundary="altBoundary123"',
+        '',
+        '--altBoundary123',
+        'Content-Type: text/plain; charset=UTF-8',
+        '',
+        plainTextBody || htmlBody.replace(/<[^>]*>/g, ''),
+        '',
+        '--altBoundary123',
+        'Content-Type: text/html; charset=UTF-8',
+        '',
+        htmlBody,
+        '',
+        '--altBoundary123--',
+        ''
+      ].join('\r\n')
+      : [
+        '--altBoundary123',
+        'Content-Type: text/plain; charset=UTF-8',
+        '',
+        plainTextBody || htmlBody.replace(/<[^>]*>/g, ''),
+        '',
+        '--altBoundary123',
+        'Content-Type: text/html; charset=UTF-8',
+        '',
+        htmlBody,
+        '',
+        '--altBoundary123--'
+      ].join('\r\n');
+
+    const attachmentBlocks = (attachments || []).map((attachment) => [
+      '--mixedBoundary456',
+      `Content-Type: ${attachment.contentType}; name="${attachment.filename}"`,
+      'Content-Transfer-Encoding: base64',
+      `Content-Disposition: attachment; filename="${attachment.filename}"`,
       '',
-      '--boundary123',
-      'Content-Type: text/plain; charset=UTF-8',
-      '',
-      plainTextBody || htmlBody.replace(/<[^>]*>/g, ''),
-      '',
-      '--boundary123',
-      'Content-Type: text/html; charset=UTF-8',
-      '',
-      htmlBody,
-      '',
-      '--boundary123--'
-    ].join('\r\n');
+      attachment.base64Content,
+      ''
+    ].join('\r\n')).join('\r\n');
+
+    const emailBody = hasAttachments
+      ? ['', alternativeBody, attachmentBlocks, '--mixedBoundary456--'].join('\r\n')
+      : ['', alternativeBody].join('\r\n');
 
     const rawEmail = emailHeaders + emailBody;
-    const encodedEmail = btoa(rawEmail).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const encodedEmail = toBase64Utf8(rawEmail).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
     // Send email via Gmail API
     const gmailResponse = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {

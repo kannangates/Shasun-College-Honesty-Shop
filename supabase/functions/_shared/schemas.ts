@@ -208,6 +208,21 @@ export const plainTextBodySchema = z.string()
 // Email CC list
 export const emailCCSchema = z.array(emailSchema).optional();
 
+// Email attachments
+export const emailAttachmentSchema = z.object({
+  filename: z.string()
+    .min(1, 'Attachment filename is required')
+    .max(255, 'Attachment filename must be 255 characters or less'),
+  contentType: z.string()
+    .min(1, 'Attachment content type is required')
+    .max(100, 'Attachment content type must be 100 characters or less'),
+  base64Content: z.string()
+    .min(1, 'Attachment content is required')
+    .max(10_000_000, 'Attachment content is too large')
+});
+
+export const emailAttachmentsSchema = z.array(emailAttachmentSchema).max(10).optional();
+
 // Inventory operation row
 export const inventoryOperationSchema = z.object({
   product_id: uuidSchema,
@@ -271,7 +286,8 @@ export const emailRequestSchema = z.object({
   fromName: z.string()
     .max(100, 'From name must be 100 characters or less')
     .default('Shasun Honesty Shop'),
-  fromEmail: emailSchema.optional()
+  fromEmail: emailSchema.optional(),
+  attachments: emailAttachmentsSchema
 });
 
 // Daily inventory save request
