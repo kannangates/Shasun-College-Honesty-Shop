@@ -8,6 +8,7 @@ import { useToast } from '@/hooks/use-toast';
 import { History, AlertTriangle, Loader2, Filter, Download, Mail } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { PRODUCT_CATEGORIES } from '@/constants/productCategories';
 
@@ -74,16 +75,25 @@ interface SummaryStats {
   totalStolenValue: number;
 }
 
+const getTodayLocalDate = (): string => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = `${today.getMonth() + 1}`.padStart(2, '0');
+  const day = `${today.getDate()}`.padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const AdminStockAccountingHistory = () => {
   const { toast } = useToast();
+  const todayDate = getTodayLocalDate();
 
   // State management
   const [records, setRecords] = useState<StockOperationHistoryRecord[]>([]);
   const [filteredRecords, setFilteredRecords] = useState<StockOperationHistoryRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState<HistoryFilters>({
-    startDate: '',
-    endDate: '',
+    startDate: todayDate,
+    endDate: todayDate,
     category: 'all',
     operator: 'all',
     product: 'all',
@@ -99,6 +109,8 @@ const AdminStockAccountingHistory = () => {
   const [dateError, setDateError] = useState<string>('');
   const [showLargeRangeWarning, setShowLargeRangeWarning] = useState(false);
   const [sendingEmail, setSendingEmail] = useState(false);
+  const [isSendEmailDialogOpen, setIsSendEmailDialogOpen] = useState(false);
+  const [recipientInput, setRecipientInput] = useState('');
 
   // Date validation
   const validateDates = (startDate: string, endDate: string): boolean => {
@@ -256,10 +268,6 @@ const AdminStockAccountingHistory = () => {
       setRecords(transformedRecords);
       setFilteredRecords(transformedRecords);
 
-      toast({
-        title: 'Success',
-        description: `Loaded ${transformedRecords.length} stock operation records`,
-      });
     } catch (error) {
       console.error('Error loading stock operations:', error);
       toast({
@@ -271,6 +279,12 @@ const AdminStockAccountingHistory = () => {
       setLoading(false);
     }
   }, [filters.startDate, filters.endDate, toast]);
+
+  // Auto-load when date range changes.
+  useEffect(() => {
+    if (!filters.startDate || !filters.endDate) return;
+    void loadStockOperations();
+  }, [filters.startDate, filters.endDate, loadStockOperations]);
 
   // Use centralized product categories
   const uniqueCategories = PRODUCT_CATEGORIES;
@@ -416,12 +430,7 @@ const AdminStockAccountingHistory = () => {
     }
   };
 
-  // Handle load data
-  const handleLoadData = () => {
-    loadStockOperations();
-  };
-
-  const handleSendEmail = async () => {
+  const handleSendEmail = () => {
     if (!filters.startDate || !filters.endDate) {
       toast({
         title: 'Missing Date Range',
@@ -431,14 +440,20 @@ const AdminStockAccountingHistory = () => {
       return;
     }
 
-    const recipientsInput = window.prompt(
-      'Enter recipient email addresses (comma-separated):',
-      ''
-    );
+    setIsSendEmailDialogOpen(true);
+  };
 
-    if (!recipientsInput) return;
+  const handleConfirmSendEmail = async () => {
+    if (!recipientInput.trim()) {
+      toast({
+        title: 'Invalid Recipients',
+        description: 'Please provide at least one valid email address.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
-    const recipients = recipientsInput
+    const recipients = recipientInput
       .split(',')
       .map(email => email.trim().toLowerCase())
       .filter(Boolean);
@@ -487,6 +502,8 @@ const AdminStockAccountingHistory = () => {
         title: 'Email Sent',
         description: `Report sent to ${recipients.length} recipient${recipients.length > 1 ? 's' : ''}.`,
       });
+      setIsSendEmailDialogOpen(false);
+      setRecipientInput('');
     } catch (error) {
       console.error('Error sending stock accounting report email:', error);
       toast({
@@ -512,13 +529,83 @@ const AdminStockAccountingHistory = () => {
         </div>
       </div>
 
-      {/* Date Range Filter Section */}
+      {/* Filters Section */}
       <Card>
-        <CardContent className="pt-6">
-          <div className="flex flex-wrap items-center gap-4">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Filter className="h-5 w-5" />
+            Filters
+          </CardTitle>
+          <CardDescription>Category | Operator | Product | Start Date | End Date</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            {/* Category Filter */}
+            <div className="space-y-2">
+              <Label htmlFor="categoryFilter">Category</Label>
+              <Select
+                value={filters.category}
+                onValueChange={(value) => handleFilterChange('category', value)}
+              >
+                <SelectTrigger id="categoryFilter" aria-label="Filter by product category">
+                  <SelectValue placeholder="All Categories" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {uniqueCategories.map((category) => (
+                    <SelectItem key={category} value={category}>
+                      {category}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Operator Filter */}
+            <div className="space-y-2">
+              <Label htmlFor="operatorFilter">Operator</Label>
+              <Select
+                value={filters.operator}
+                onValueChange={(value) => handleFilterChange('operator', value)}
+              >
+                <SelectTrigger id="operatorFilter" aria-label="Filter by operator">
+                  <SelectValue placeholder="All Operators" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Operators</SelectItem>
+                  {uniqueOperators.map((operator) => (
+                    <SelectItem key={operator} value={operator}>
+                      {operator}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Product Filter */}
+            <div className="space-y-2">
+              <Label htmlFor="productFilter">Product</Label>
+              <Select
+                value={filters.product}
+                onValueChange={(value) => handleFilterChange('product', value)}
+              >
+                <SelectTrigger id="productFilter" aria-label="Filter by product">
+                  <SelectValue placeholder="All Products" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Products</SelectItem>
+                  {uniqueProducts.map((product) => (
+                    <SelectItem key={product.id} value={product.name}>
+                      {product.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             {/* Start Date */}
-            <div className="flex items-center gap-2">
-              <Label htmlFor="startDate" className="text-sm font-medium whitespace-nowrap">
+            <div className="space-y-2">
+              <Label htmlFor="startDate" className="text-sm font-medium">
                 Start Date
               </Label>
               <Input
@@ -526,16 +613,15 @@ const AdminStockAccountingHistory = () => {
                 type="date"
                 value={filters.startDate}
                 onChange={(e) => handleDateChange('startDate', e.target.value)}
-                max={new Date().toISOString().split('T')[0]}
+                max={todayDate}
                 aria-label="Select start date for stock operations history"
                 aria-required="true"
-                className="w-auto"
               />
             </div>
 
             {/* End Date */}
-            <div className="flex items-center gap-2">
-              <Label htmlFor="endDate" className="text-sm font-medium whitespace-nowrap">
+            <div className="space-y-2">
+              <Label htmlFor="endDate" className="text-sm font-medium">
                 End Date
               </Label>
               <Input
@@ -543,23 +629,12 @@ const AdminStockAccountingHistory = () => {
                 type="date"
                 value={filters.endDate}
                 onChange={(e) => handleDateChange('endDate', e.target.value)}
-                max={new Date().toISOString().split('T')[0]}
+                max={todayDate}
                 min={filters.startDate}
                 aria-label="Select end date for stock operations history"
                 aria-required="true"
-                className="w-auto"
               />
             </div>
-
-            {/* Load Data Button */}
-            <Button
-              onClick={handleLoadData}
-              disabled={loading || !filters.startDate || !filters.endDate}
-              className="bg-gradient-to-r from-[#202072] to-[#e66166]"
-              aria-label="Load stock operations data for selected date range"
-            >
-              {loading ? 'Loading...' : 'Load Data'}
-            </Button>
           </div>
 
           {/* Error Message */}
@@ -582,101 +657,22 @@ const AdminStockAccountingHistory = () => {
         </CardContent>
       </Card>
 
-      {/* Filters Section */}
-      {records.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Filter className="h-5 w-5" />
-              Filters
-            </CardTitle>
-            <CardDescription>Filter the displayed stock operations</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Category Filter */}
-              <div className="space-y-2">
-                <Label htmlFor="categoryFilter">Category</Label>
-                <Select
-                  value={filters.category}
-                  onValueChange={(value) => handleFilterChange('category', value)}
-                >
-                  <SelectTrigger id="categoryFilter" aria-label="Filter by product category">
-                    <SelectValue placeholder="All Categories" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
-                    {uniqueCategories.map((category) => (
-                      <SelectItem key={category} value={category}>
-                        {category}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Operator Filter */}
-              <div className="space-y-2">
-                <Label htmlFor="operatorFilter">Operator</Label>
-                <Select
-                  value={filters.operator}
-                  onValueChange={(value) => handleFilterChange('operator', value)}
-                >
-                  <SelectTrigger id="operatorFilter" aria-label="Filter by operator">
-                    <SelectValue placeholder="All Operators" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Operators</SelectItem>
-                    {uniqueOperators.map((operator) => (
-                      <SelectItem key={operator} value={operator}>
-                        {operator}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Product Filter */}
-              <div className="space-y-2">
-                <Label htmlFor="productFilter">Product</Label>
-                <Select
-                  value={filters.product}
-                  onValueChange={(value) => handleFilterChange('product', value)}
-                >
-                  <SelectTrigger id="productFilter" aria-label="Filter by product">
-                    <SelectValue placeholder="All Products" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Products</SelectItem>
-                    {uniqueProducts.map((product) => (
-                      <SelectItem key={product.id} value={product.name}>
-                        {product.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {/* Summary Statistics */}
       {filteredRecords.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {/* Total Products Tracked */}
           <Card>
-            <CardHeader className="pb-3">
-              <CardDescription>Total Products Tracked</CardDescription>
-              <CardTitle className="text-3xl">{summaryStats.totalProducts}</CardTitle>
+            <CardHeader className="pb-3 text-center">
+              <CardDescription className="text-center">Total Products Tracked</CardDescription>
+              <CardTitle className="text-3xl text-center">{summaryStats.totalProducts}</CardTitle>
             </CardHeader>
           </Card>
 
           {/* Total Sales Value */}
           <Card>
-            <CardHeader className="pb-3">
-              <CardDescription>Total Sales Value</CardDescription>
-              <CardTitle className="text-3xl">
+            <CardHeader className="pb-3 text-center">
+              <CardDescription className="text-center">Total Sales Value</CardDescription>
+              <CardTitle className="text-3xl text-center">
                 ₹{summaryStats.totalSalesValue.toFixed(2)}
               </CardTitle>
             </CardHeader>
@@ -684,12 +680,12 @@ const AdminStockAccountingHistory = () => {
 
           {/* Total Wastage */}
           <Card>
-            <CardHeader className="pb-3">
-              <CardDescription>Total Wastage Value</CardDescription>
-              <CardTitle className="text-3xl">
+            <CardHeader className="pb-3 text-center">
+              <CardDescription className="text-center">Total Wastage Value</CardDescription>
+              <CardTitle className="text-3xl text-center">
                 ₹{summaryStats.totalWastageValue.toFixed(2)}
               </CardTitle>
-              <div className="text-sm text-muted-foreground">
+              <div className="text-sm text-muted-foreground text-center">
                 {summaryStats.totalWastageUnits} units
               </div>
             </CardHeader>
@@ -697,12 +693,12 @@ const AdminStockAccountingHistory = () => {
 
           {/* Total Stolen */}
           <Card>
-            <CardHeader className="pb-3">
-              <CardDescription>Total Stolen Value</CardDescription>
-              <CardTitle className="text-3xl">
+            <CardHeader className="pb-3 text-center">
+              <CardDescription className="text-center">Total Stolen Value</CardDescription>
+              <CardTitle className="text-3xl text-center">
                 ₹{summaryStats.totalStolenValue.toFixed(2)}
               </CardTitle>
-              <div className="text-sm text-muted-foreground">
+              <div className="text-sm text-muted-foreground text-center">
                 {summaryStats.totalStolenUnits} units
               </div>
             </CardHeader>
@@ -719,7 +715,7 @@ const AdminStockAccountingHistory = () => {
               <CardDescription>
                 {filteredRecords.length > 0
                   ? `Showing ${filteredRecords.length} stock operation record${filteredRecords.length !== 1 ? 's' : ''}`
-                  : 'Select a date range and click "Load Data" to view stock operations'}
+                  : 'No stock operations found for the selected date range'}
               </CardDescription>
             </div>
             {(filters.startDate && filters.endDate) && (
@@ -763,7 +759,7 @@ const AdminStockAccountingHistory = () => {
               <p className="text-muted-foreground">
                 {records.length === 0 && filters.startDate && filters.endDate
                   ? 'No stock operations found for the selected date range'
-                  : 'Select a date range and click "Load Data" to view stock operations'}
+                  : 'No stock operations found for the selected date range'}
               </p>
             </div>
           ) : (
@@ -812,6 +808,40 @@ const AdminStockAccountingHistory = () => {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={isSendEmailDialogOpen} onOpenChange={setIsSendEmailDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Send Stock Report</DialogTitle>
+            <DialogDescription>
+              Enter recipient email addresses separated by commas.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="reportRecipients">Recipients</Label>
+            <Input
+              id="reportRecipients"
+              type="text"
+              placeholder="ops@example.com, finance@example.com"
+              value={recipientInput}
+              onChange={(e) => setRecipientInput(e.target.value)}
+              disabled={sendingEmail}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsSendEmailDialogOpen(false)}
+              disabled={sendingEmail}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleConfirmSendEmail} disabled={sendingEmail || !recipientInput.trim()}>
+              {sendingEmail ? 'Sending...' : 'Send Email'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
