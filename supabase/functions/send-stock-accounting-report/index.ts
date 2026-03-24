@@ -44,6 +44,20 @@ interface ReportRow {
   unitPrice: number;
 }
 
+interface PaymentSummary {
+  paidAmount: number;
+  unpaidAmount: number;
+  totalSales: number;
+  pilferageAmount: number;
+  wastageAmount: number;
+}
+
+interface TopProductSummary {
+  productName: string;
+  soldQty: number;
+  salesValue: number;
+}
+
 const manualSendSchema = z.object({
   operation: z.literal('manual_send'),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'startDate must be YYYY-MM-DD'),
@@ -196,6 +210,61 @@ const getSummary = (rows: ReportRow[]) => {
     totalWastageValue,
     totalStolenValue,
   };
+};
+
+const getPaymentSummary = async (
+  supabase: SupabaseClient,
+  startDate: string,
+  endDate: string,
+  stolenAmount: number,
+  wastageAmount: number,
+): Promise<PaymentSummary> => {
+  const { data: ordersData, error } = await supabase
+    .from('orders')
+    .select('payment_status, total_amount')
+    .gte('created_at', startDate)
+    .lte('created_at', endDate);
+
+  if (error) throw error;
+
+  const orders = (ordersData || []) as Array<{ payment_status?: string | null; total_amount?: number | null }>;
+  const paidAmount = orders.reduce((sum, order) => {
+    const status = (order.payment_status || '').toLowerCase();
+    return status === 'paid' ? sum + Number(order.total_amount || 0) : sum;
+  }, 0);
+  const unpaidAmount = orders.reduce((sum, order) => {
+    const status = (order.payment_status || '').toLowerCase();
+    return status === 'paid' ? sum : sum + Number(order.total_amount || 0);
+  }, 0);
+
+  return {
+    paidAmount,
+    unpaidAmount,
+    totalSales: paidAmount + unpaidAmount,
+    pilferageAmount: stolenAmount,
+    wastageAmount,
+  };
+};
+
+const getTopProducts = (rows: ReportRow[], limit = 5): TopProductSummary[] => {
+  const grouped = new Map<string, TopProductSummary>();
+  for (const row of rows) {
+    const existing = grouped.get(row.productName);
+    if (existing) {
+      existing.soldQty += row.soldQty;
+      existing.salesValue += row.salesValue;
+    } else {
+      grouped.set(row.productName, {
+        productName: row.productName,
+        soldQty: row.soldQty,
+        salesValue: row.salesValue,
+      });
+    }
+  }
+
+  return Array.from(grouped.values())
+    .sort((a, b) => (b.soldQty - a.soldQty) || (b.salesValue - a.salesValue))
+    .slice(0, limit);
 };
 
 const getRoleAccess = async (supabase: SupabaseClient, userId: string): Promise<boolean> => {
@@ -422,7 +491,34 @@ const getBodyContent = (
   startDate: string,
   endDate: string,
   filtersText: string,
+  paymentSummary: PaymentSummary,
+  topProducts: TopProductSummary[],
 ) => {
+  const topProductsPlainText = topProducts.length > 0
+    ? topProducts
+      .map((item, index) => `${index + 1}. ${item.productName} - ${item.soldQty} units (₹${item.salesValue.toFixed(2)})`)
+      .join('\n')
+    : 'No product sales data available for this period.';
+
+  const topProductsRowsHtml = topProducts.length > 0
+    ? topProducts
+      .map((item, index) => `
+        <tr>
+          <td style="padding:8px;border:1px solid #e5e7eb;">${index + 1}</td>
+          <td style="padding:8px;border:1px solid #e5e7eb;">${item.productName}</td>
+          <td style="padding:8px;border:1px solid #e5e7eb;text-align:right;">${item.soldQty}</td>
+          <td style="padding:8px;border:1px solid #e5e7eb;text-align:right;">₹${item.salesValue.toFixed(2)}</td>
+        </tr>
+      `)
+      .join('')
+    : `
+      <tr>
+        <td colspan="4" style="padding:8px;border:1px solid #e5e7eb;text-align:center;color:#6b7280;">
+          No product sales data available for this period.
+        </td>
+      </tr>
+    `;
+
   const plainTextBody = [
     'Stock Accounting Report',
     `Period: ${startDate} to ${endDate}`,
@@ -432,6 +528,16 @@ const getBodyContent = (
     `Total Sales Value: ₹${summary.totalSalesValue.toFixed(2)}`,
     `Total Wastage: ${summary.totalWastageUnits} units (₹${summary.totalWastageValue.toFixed(2)})`,
     `Total Stolen: ${summary.totalStolenUnits} units (₹${summary.totalStolenValue.toFixed(2)})`,
+    '',
+    'PAYMENT DETAILS',
+    `Paid: ₹${paymentSummary.paidAmount.toFixed(2)}`,
+    `Unpaid: ₹${paymentSummary.unpaidAmount.toFixed(2)}`,
+    `Total Sales: ₹${paymentSummary.totalSales.toFixed(2)}`,
+    `Pilferage: ₹${paymentSummary.pilferageAmount.toFixed(2)}`,
+    `Wastage: ₹${paymentSummary.wastageAmount.toFixed(2)}`,
+    '',
+    'TOP 5 PRODUCTS (By Sold Qty)',
+    topProductsPlainText,
     '',
     'Please find the detailed CSV attached.',
   ].join('\n');
@@ -463,6 +569,51 @@ const getBodyContent = (
           <td style="padding:8px;border:1px solid #e5e7eb;">${summary.totalStolenUnits} units (₹${summary.totalStolenValue.toFixed(2)})</td>
         </tr>
       </table>
+      <h3 style="margin-top:18px;margin-bottom:8px;color:#202072;">PAYMENT DETAILS</h3>
+      <table style="border-collapse: collapse; width: 100%;">
+        <thead>
+          <tr>
+            <th style="padding:8px;border:1px solid #e5e7eb;background:#f9fafb;text-align:left;">Mode of payment</th>
+            <th style="padding:8px;border:1px solid #e5e7eb;background:#f9fafb;text-align:right;">Amount (Rs.)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="padding:8px;border:1px solid #e5e7eb;">Paid</td>
+            <td style="padding:8px;border:1px solid #e5e7eb;text-align:right;">₹${paymentSummary.paidAmount.toFixed(2)}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px;border:1px solid #e5e7eb;">Unpaid</td>
+            <td style="padding:8px;border:1px solid #e5e7eb;text-align:right;">₹${paymentSummary.unpaidAmount.toFixed(2)}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px;border:1px solid #e5e7eb;"><strong>Total sales</strong></td>
+            <td style="padding:8px;border:1px solid #e5e7eb;text-align:right;"><strong>₹${paymentSummary.totalSales.toFixed(2)}</strong></td>
+          </tr>
+          <tr>
+            <td style="padding:8px;border:1px solid #e5e7eb;">Pilferage</td>
+            <td style="padding:8px;border:1px solid #e5e7eb;text-align:right;">₹${paymentSummary.pilferageAmount.toFixed(2)}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px;border:1px solid #e5e7eb;">Wastage</td>
+            <td style="padding:8px;border:1px solid #e5e7eb;text-align:right;">₹${paymentSummary.wastageAmount.toFixed(2)}</td>
+          </tr>
+        </tbody>
+      </table>
+      <h3 style="margin-top:18px;margin-bottom:8px;color:#202072;">Top 5 Products</h3>
+      <table style="border-collapse: collapse; width: 100%;">
+        <thead>
+          <tr>
+            <th style="padding:8px;border:1px solid #e5e7eb;background:#f9fafb;text-align:left;">#</th>
+            <th style="padding:8px;border:1px solid #e5e7eb;background:#f9fafb;text-align:left;">Product</th>
+            <th style="padding:8px;border:1px solid #e5e7eb;background:#f9fafb;text-align:right;">Sold Qty</th>
+            <th style="padding:8px;border:1px solid #e5e7eb;background:#f9fafb;text-align:right;">Sales Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${topProductsRowsHtml}
+        </tbody>
+      </table>
       <p style="margin-top:16px;color:#6b7280;">Detailed rows are attached as CSV.</p>
     </div>
   `;
@@ -479,11 +630,26 @@ const handleManualSend = async (
   const allRows = await getOperationRows(supabase, payload.startDate, payload.endDate);
   const filteredRows = applyFilters(allRows, payload.filters);
   const summary = getSummary(filteredRows);
+  const topProducts = getTopProducts(filteredRows);
+  const paymentSummary = await getPaymentSummary(
+    supabase,
+    payload.startDate,
+    payload.endDate,
+    summary.totalStolenValue,
+    summary.totalWastageValue,
+  );
   const filtersText = `category=${payload.filters?.category || 'all'}, operator=${payload.filters?.operator || 'all'}, product=${payload.filters?.product || 'all'}`;
   const subject = getSubject('manual', payload.startDate, payload.endDate);
   const csvContent = getCsvContent(filteredRows);
   const csvFilename = `stock-accounting-${payload.startDate}-to-${payload.endDate}.csv`;
-  const { plainTextBody, htmlBody } = getBodyContent(summary, payload.startDate, payload.endDate, filtersText);
+  const { plainTextBody, htmlBody } = getBodyContent(
+    summary,
+    payload.startDate,
+    payload.endDate,
+    filtersText,
+    paymentSummary,
+    topProducts,
+  );
 
   await sendReportEmail(
     supabaseUrl,
@@ -554,10 +720,25 @@ const runSchedule = async (
   try {
     const rows = await getOperationRows(supabase, period.startDate, period.endDate);
     const summary = getSummary(rows);
+    const topProducts = getTopProducts(rows);
+    const paymentSummary = await getPaymentSummary(
+      supabase,
+      period.startDate,
+      period.endDate,
+      summary.totalStolenValue,
+      summary.totalWastageValue,
+    );
     const subject = getSubject(schedule.frequency, period.startDate, period.endDate);
     const csvContent = getCsvContent(rows);
     const csvFilename = `stock-accounting-${schedule.frequency}-${period.startDate}-to-${period.endDate}.csv`;
-    const { plainTextBody, htmlBody } = getBodyContent(summary, period.startDate, period.endDate, 'all');
+    const { plainTextBody, htmlBody } = getBodyContent(
+      summary,
+      period.startDate,
+      period.endDate,
+      'all',
+      paymentSummary,
+      topProducts,
+    );
 
     await sendReportEmail(
       supabaseUrl,
