@@ -335,18 +335,16 @@ const AdminStockAccountingHistory = () => {
     const totalSalesValue = filtered.reduce((sum, r) => sum + (r.sales || 0), 0);
     const totalWastageUnits = filtered.reduce((sum, r) => sum + r.wastage_stock, 0);
     const totalStolenUnits = filtered.reduce((sum, r) => sum + r.stolen_stock, 0);
-    const getEffectiveUnitPrice = (record: StockOperationHistoryRecord) => {
-      if ((record.order_count || 0) > 0 && (record.sales || 0) > 0) {
-        return record.sales / record.order_count;
-      }
-      return record.product.unit_price || record.product.price || 0;
+    const getProductUnitPrice = (record: StockOperationHistoryRecord): number => {
+      return Number(record.product.unit_price || record.product.price || 0);
     };
 
+    // Per product-row valuation: qty * that product's unit price, then summed across rows.
     const totalWastageValue = filtered.reduce((sum, r) => {
-      return sum + (r.wastage_stock * getEffectiveUnitPrice(r));
+      return sum + (r.wastage_stock * getProductUnitPrice(r));
     }, 0);
     const totalStolenValue = filtered.reduce((sum, r) => {
-      return sum + (r.stolen_stock * getEffectiveUnitPrice(r));
+      return sum + (r.stolen_stock * getProductUnitPrice(r));
     }, 0);
 
     setSummaryStats({
