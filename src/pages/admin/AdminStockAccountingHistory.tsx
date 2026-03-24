@@ -83,6 +83,35 @@ const getTodayLocalDate = (): string => {
   return `${year}-${month}-${day}`;
 };
 
+const extractFunctionErrorMessage = async (error: unknown): Promise<string> => {
+  const fromContext = async (context: unknown): Promise<string | null> => {
+    if (typeof context !== 'object' || context === null || !('json' in context)) return null;
+    try {
+      const response = context as Response;
+      const body = await response.clone().json();
+      if (typeof body?.error === 'string') return body.error;
+      if (body?.error) return JSON.stringify(body.error);
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  if (error instanceof Error) {
+    const contextMessage = await fromContext((error as Error & { context?: unknown }).context);
+    return contextMessage || error.message;
+  }
+
+  const contextMessage = await fromContext((error as { context?: unknown })?.context);
+  if (contextMessage) return contextMessage;
+
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return 'Failed to send email report.';
+  }
+};
+
 const AdminStockAccountingHistory = () => {
   const { toast } = useToast();
   const todayDate = getTodayLocalDate();
@@ -504,9 +533,10 @@ const AdminStockAccountingHistory = () => {
       setRecipientInput('');
     } catch (error) {
       console.error('Error sending stock accounting report email:', error);
+      const errorMessage = await extractFunctionErrorMessage(error);
       toast({
         title: 'Email Failed',
-        description: error instanceof Error ? error.message : 'Failed to send email report.',
+        description: errorMessage || 'Failed to send email report.',
         variant: 'destructive',
       });
     } finally {

@@ -25,7 +25,6 @@ interface ProductRow {
   name: string;
   category: string;
   unit_price?: number | null;
-  price?: number | null;
 }
 
 interface ReportRow {
@@ -132,6 +131,15 @@ const parseTimeToMinutes = (timeText: string): number => {
 
 const getIstMinutes = (istNow: Date): number => {
   return (istNow.getUTCHours() * 60) + istNow.getUTCMinutes();
+};
+
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) return error.message;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
 };
 
 const getCsvContent = (rows: ReportRow[]): string => {
@@ -301,7 +309,7 @@ const getOperationRows = async (
   const createdByIds = [...new Set(operationRows.map((op) => op.created_by).filter(Boolean))] as string[];
 
   const [{ data: productsData, error: productsError }, { data: usersData, error: usersError }] = await Promise.all([
-    supabase.from('products').select('id, name, category, unit_price, price').in('id', productIds),
+    supabase.from('products').select('id, name, category, unit_price').in('id', productIds),
     createdByIds.length > 0
       ? supabase.from('users').select('id, student_id').in('id', createdByIds)
       : Promise.resolve({ data: [], error: null }),
@@ -319,7 +327,7 @@ const getOperationRows = async (
       if (!product) return null;
 
       const soldQty = op.order_count || 0;
-      const unitPrice = Number(product.unit_price || product.price || 0);
+      const unitPrice = Number(product.unit_price || 0);
       const estimatedClosingStock = (op.opening_stock || 0) + (op.additional_stock || 0) - soldQty;
       const stolenStock = Math.max(0, estimatedClosingStock - (op.actual_closing_stock || 0) - (op.wastage_stock || 0));
       const salesValue = (op.sales && op.sales > 0) ? op.sales : soldQty * unitPrice;
@@ -730,7 +738,7 @@ Deno.serve(async (req) => {
     console.error('send-stock-accounting-report failed:', error);
     return new Response(JSON.stringify({
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: getErrorMessage(error),
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
