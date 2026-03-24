@@ -208,7 +208,7 @@ const AdminStockAccountingHistory = () => {
       }
 
       // Create products lookup map
-      const productsMap = new Map(productsData?.map(p => [p.id, p]) || []);
+      const productsMap = new Map((productsData || []).map(p => [p.id, p as unknown as Product]));
 
       // Transform data to include product and operator name
       const transformedRecords: StockOperationHistoryRecord[] = (operationsData || [])
