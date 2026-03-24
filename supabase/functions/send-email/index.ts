@@ -113,41 +113,21 @@ const handler = async (req: Request): Promise<Response> => {
     const encodedPlainBody = wrapBase64(toBase64Utf8(plainBody));
     const encodedHtmlBody = wrapBase64(toBase64Utf8(htmlBody));
 
-    const alternativeBody = hasAttachments
-      ? [
-        '--mixedBoundary456',
-        'Content-Type: multipart/alternative; boundary="altBoundary123"',
-        '',
-        '--altBoundary123',
-        'Content-Type: text/plain; charset=UTF-8',
-        'Content-Transfer-Encoding: base64',
-        '',
-        encodedPlainBody,
-        '',
-        '--altBoundary123',
-        'Content-Type: text/html; charset=UTF-8',
-        'Content-Transfer-Encoding: base64',
-        '',
-        encodedHtmlBody,
-        '',
-        '--altBoundary123--',
-        ''
-      ].join('\r\n')
-      : [
-        '--altBoundary123',
-        'Content-Type: text/plain; charset=UTF-8',
-        'Content-Transfer-Encoding: base64',
-        '',
-        encodedPlainBody,
-        '',
-        '--altBoundary123',
-        'Content-Type: text/html; charset=UTF-8',
-        'Content-Transfer-Encoding: base64',
-        '',
-        encodedHtmlBody,
-        '',
-        '--altBoundary123--'
-      ].join('\r\n');
+    const alternativeBody = [
+      '--altBoundary123',
+      'Content-Type: text/plain; charset=UTF-8',
+      'Content-Transfer-Encoding: base64',
+      '',
+      encodedPlainBody,
+      '',
+      '--altBoundary123',
+      'Content-Type: text/html; charset=UTF-8',
+      'Content-Transfer-Encoding: base64',
+      '',
+      encodedHtmlBody,
+      '',
+      '--altBoundary123--',
+    ].join('\r\n');
 
     const attachmentBlocks = (attachments || []).map((attachment) => [
       '--mixedBoundary456',
@@ -160,10 +140,18 @@ const handler = async (req: Request): Promise<Response> => {
     ].join('\r\n')).join('\r\n');
 
     const emailBody = hasAttachments
-      ? ['', alternativeBody, attachmentBlocks, '--mixedBoundary456--'].join('\r\n')
-      : ['', alternativeBody].join('\r\n');
+      ? [
+        '--mixedBoundary456',
+        'Content-Type: multipart/alternative; boundary="altBoundary123"',
+        '',
+        alternativeBody,
+        '',
+        attachmentBlocks,
+        '--mixedBoundary456--',
+      ].join('\r\n')
+      : alternativeBody;
 
-    const rawEmail = emailHeaders + emailBody;
+    const rawEmail = `${emailHeaders}\r\n\r\n${emailBody}`;
     const encodedEmail = toBase64Utf8(rawEmail).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
     // Send email via Gmail API
