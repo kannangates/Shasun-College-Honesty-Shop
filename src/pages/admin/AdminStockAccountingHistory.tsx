@@ -579,7 +579,7 @@ const AdminStockAccountingHistory = () => {
 
       {/* Summary Statistics */}
       {filteredRecords.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {/* Total Products Tracked */}
           <Card>
             <CardHeader className="pb-3">
@@ -598,24 +598,28 @@ const AdminStockAccountingHistory = () => {
             </CardHeader>
           </Card>
 
-          {/* Total Wastage Units */}
+          {/* Total Wastage */}
           <Card>
             <CardHeader className="pb-3">
-              <CardDescription>Total Wastage Units</CardDescription>
-              <CardTitle className="text-3xl">{summaryStats.totalWastageUnits}</CardTitle>
-              <div className="text-sm text-muted-foreground">
+              <CardDescription>Total Wastage Value</CardDescription>
+              <CardTitle className="text-3xl">
                 ₹{summaryStats.totalWastageValue.toFixed(2)}
+              </CardTitle>
+              <div className="text-sm text-muted-foreground">
+                {summaryStats.totalWastageUnits} units
               </div>
             </CardHeader>
           </Card>
 
-          {/* Total Stolen Units */}
+          {/* Total Stolen */}
           <Card>
             <CardHeader className="pb-3">
-              <CardDescription>Total Stolen Units</CardDescription>
-              <CardTitle className="text-3xl">{summaryStats.totalStolenUnits}</CardTitle>
-              <div className="text-sm text-muted-foreground">
+              <CardDescription>Total Stolen Value</CardDescription>
+              <CardTitle className="text-3xl">
                 ₹{summaryStats.totalStolenValue.toFixed(2)}
+              </CardTitle>
+              <div className="text-sm text-muted-foreground">
+                {summaryStats.totalStolenUnits} units
               </div>
             </CardHeader>
           </Card>
