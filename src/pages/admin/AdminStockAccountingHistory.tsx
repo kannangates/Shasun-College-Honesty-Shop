@@ -722,26 +722,24 @@ const AdminStockAccountingHistory = () => {
               <div className="flex items-center gap-2">
                 <Button
                   onClick={handleSendEmail}
-                  variant="outline"
                   disabled={sendingEmail || loading}
-                  className="flex items-center gap-2"
+                  className="flex items-center gap-2 border-0 bg-gradient-to-r from-pink-500 via-fuchsia-500 to-indigo-500 text-white shadow-md transition-all hover:scale-[1.02] hover:shadow-lg"
                   aria-label="Send filtered stock accounting report by email"
                 >
                   {sendingEmail ? (
-                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    <Loader2 className="h-4 w-4 animate-spin text-white" aria-hidden="true" />
                   ) : (
-                    <Mail className="h-4 w-4" aria-hidden="true" />
+                    <Mail className="h-4 w-4 text-white" aria-hidden="true" />
                   )}
                   {sendingEmail ? 'Sending...' : 'Send Email'}
                 </Button>
                 <Button
                   onClick={handleExport}
-                  variant="outline"
                   disabled={filteredRecords.length === 0}
-                  className="flex items-center gap-2"
+                  className="flex items-center gap-2 border-0 bg-gradient-to-r from-cyan-500 via-sky-500 to-emerald-500 text-white shadow-md transition-all hover:scale-[1.02] hover:shadow-lg"
                   aria-label={`Export ${filteredRecords.length} stock operation records to CSV`}
                 >
-                  <Download className="h-4 w-4" aria-hidden="true" />
+                  <Download className="h-4 w-4 text-white" aria-hidden="true" />
                   Export CSV
                 </Button>
               </div>
