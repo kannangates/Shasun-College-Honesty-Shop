@@ -708,9 +708,9 @@ const AdminStockAccountingHistory = () => {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Historical Stock Data</CardTitle>
-              <CardDescription>
+            <div className="space-y-1.5">
+              <CardTitle className="leading-tight">Historical Stock Data</CardTitle>
+              <CardDescription className="text-sm">
                 {filteredRecords.length > 0
                   ? `Showing ${filteredRecords.length} stock operation record${filteredRecords.length !== 1 ? 's' : ''}`
                   : 'No stock operations found for the selected date range'}
