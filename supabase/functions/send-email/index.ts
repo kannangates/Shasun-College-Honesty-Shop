@@ -33,6 +33,10 @@ const toBase64Utf8 = (content: string): string => {
   return btoa(binary);
 };
 
+const wrapBase64 = (base64Text: string): string => {
+  return base64Text.match(/.{1,76}/g)?.join('\r\n') || '';
+};
+
 const handler = async (req: Request): Promise<Response> => {
   // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
@@ -105,6 +109,10 @@ const handler = async (req: Request): Promise<Response> => {
         : 'Content-Type: multipart/alternative; boundary="altBoundary123"'
     ].filter(Boolean).join('\r\n');
 
+    const plainBody = plainTextBody || htmlBody.replace(/<[^>]*>/g, '');
+    const encodedPlainBody = wrapBase64(toBase64Utf8(plainBody));
+    const encodedHtmlBody = wrapBase64(toBase64Utf8(htmlBody));
+
     const alternativeBody = hasAttachments
       ? [
         '--mixedBoundary456',
@@ -112,13 +120,15 @@ const handler = async (req: Request): Promise<Response> => {
         '',
         '--altBoundary123',
         'Content-Type: text/plain; charset=UTF-8',
+        'Content-Transfer-Encoding: base64',
         '',
-        plainTextBody || htmlBody.replace(/<[^>]*>/g, ''),
+        encodedPlainBody,
         '',
         '--altBoundary123',
         'Content-Type: text/html; charset=UTF-8',
+        'Content-Transfer-Encoding: base64',
         '',
-        htmlBody,
+        encodedHtmlBody,
         '',
         '--altBoundary123--',
         ''
@@ -126,13 +136,15 @@ const handler = async (req: Request): Promise<Response> => {
       : [
         '--altBoundary123',
         'Content-Type: text/plain; charset=UTF-8',
+        'Content-Transfer-Encoding: base64',
         '',
-        plainTextBody || htmlBody.replace(/<[^>]*>/g, ''),
+        encodedPlainBody,
         '',
         '--altBoundary123',
         'Content-Type: text/html; charset=UTF-8',
+        'Content-Transfer-Encoding: base64',
         '',
-        htmlBody,
+        encodedHtmlBody,
         '',
         '--altBoundary123--'
       ].join('\r\n');
@@ -143,7 +155,7 @@ const handler = async (req: Request): Promise<Response> => {
       'Content-Transfer-Encoding: base64',
       `Content-Disposition: attachment; filename="${attachment.filename}"`,
       '',
-      attachment.base64Content,
+      wrapBase64(attachment.base64Content),
       ''
     ].join('\r\n')).join('\r\n');
 
