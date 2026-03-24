@@ -71,6 +71,8 @@ interface SummaryStats {
   totalSalesValue: number;
   totalWastageUnits: number;
   totalStolenUnits: number;
+  totalWastageValue: number;
+  totalStolenValue: number;
 }
 
 const AdminStockAccountingHistory = () => {
@@ -92,6 +94,8 @@ const AdminStockAccountingHistory = () => {
     totalSalesValue: 0,
     totalWastageUnits: 0,
     totalStolenUnits: 0,
+    totalWastageValue: 0,
+    totalStolenValue: 0,
   });
   const [dateError, setDateError] = useState<string>('');
   const [showLargeRangeWarning, setShowLargeRangeWarning] = useState(false);
@@ -160,7 +164,6 @@ const AdminStockAccountingHistory = () => {
 
     setLoading(true);
     try {
-      // Query daily_stock_operations with date range filter
       const { data: operationsData, error: operationsError } = await supabase
         .from('daily_stock_operations')
         .select('*')
@@ -213,7 +216,15 @@ const AdminStockAccountingHistory = () => {
           const product = productsMap.get(op.product_id);
           if (!product) return null;
 
-          const variance = op.estimated_closing_stock - op.actual_closing_stock;
+          const soldQty = op.order_count || 0;
+          const unitPrice = product.unit_price || product.price || 0;
+          const estimatedClosingStock = (op.opening_stock || 0) + (op.additional_stock || 0) - soldQty;
+          const stolenStock = Math.max(
+            0,
+            estimatedClosingStock - (op.actual_closing_stock || 0) - (op.wastage_stock || 0)
+          );
+          const salesValue = soldQty * unitPrice;
+          const variance = estimatedClosingStock - op.actual_closing_stock;
 
           // Get operator name from created_by
           const operatorId = (op as Record<string, unknown>).created_by as string | undefined;
@@ -225,12 +236,12 @@ const AdminStockAccountingHistory = () => {
             opening_stock: op.opening_stock,
             additional_stock: op.additional_stock,
             actual_closing_stock: op.actual_closing_stock,
-            estimated_closing_stock: op.estimated_closing_stock,
-            stolen_stock: op.stolen_stock,
+            estimated_closing_stock: estimatedClosingStock,
+            stolen_stock: stolenStock,
             wastage_stock: op.wastage_stock,
             warehouse_stock: op.warehouse_stock,
-            sales: op.sales,
-            order_count: op.order_count,
+            sales: salesValue,
+            order_count: soldQty,
             created_at: op.created_at,
             updated_at: null,
             created_by: operatorId,
@@ -305,17 +316,26 @@ const AdminStockAccountingHistory = () => {
     const uniqueProductIds = new Set(filtered.map(r => r.product_id));
     const totalProducts = uniqueProductIds.size;
 
-    // sales column already contains the total sales value (order_count * unit_price)
+    // sales is derived as sold qty * unit price
     const totalSalesValue = filtered.reduce((sum, r) => sum + (r.sales || 0), 0);
-
     const totalWastageUnits = filtered.reduce((sum, r) => sum + r.wastage_stock, 0);
     const totalStolenUnits = filtered.reduce((sum, r) => sum + r.stolen_stock, 0);
+    const totalWastageValue = filtered.reduce((sum, r) => {
+      const unitPrice = r.product.unit_price || r.product.price || 0;
+      return sum + (r.wastage_stock * unitPrice);
+    }, 0);
+    const totalStolenValue = filtered.reduce((sum, r) => {
+      const unitPrice = r.product.unit_price || r.product.price || 0;
+      return sum + (r.stolen_stock * unitPrice);
+    }, 0);
 
     setSummaryStats({
       totalProducts,
       totalSalesValue,
       totalWastageUnits,
       totalStolenUnits,
+      totalWastageValue,
+      totalStolenValue,
     });
   }, [records, filters.category, filters.operator, filters.product]);
 
@@ -333,12 +353,12 @@ const AdminStockAccountingHistory = () => {
         'Product Name',
         'Opening Stock',
         'Additional Stock',
-        'Sales',
-        'Wastage',
-        'Stolen Stock',
+        'Sold Qty',
         'Estimated Closing Stock',
         'Actual Closing Stock',
-        'Variance',
+        'Wastage',
+        'Stolen Stock',
+        'Sales Value',
       ];
 
       // Create CSV rows
@@ -347,12 +367,12 @@ const AdminStockAccountingHistory = () => {
         record.product.name,
         record.opening_stock,
         record.additional_stock,
-        record.sales,
-        record.wastage_stock,
-        record.stolen_stock,
+        record.order_count,
         record.estimated_closing_stock,
         record.actual_closing_stock,
-        record.variance,
+        record.wastage_stock,
+        record.stolen_stock,
+        record.sales.toFixed(2),
       ]);
 
       // Combine headers and rows
@@ -583,6 +603,9 @@ const AdminStockAccountingHistory = () => {
             <CardHeader className="pb-3">
               <CardDescription>Total Wastage Units</CardDescription>
               <CardTitle className="text-3xl">{summaryStats.totalWastageUnits}</CardTitle>
+              <div className="text-sm text-muted-foreground">
+                ₹{summaryStats.totalWastageValue.toFixed(2)}
+              </div>
             </CardHeader>
           </Card>
 
@@ -591,6 +614,9 @@ const AdminStockAccountingHistory = () => {
             <CardHeader className="pb-3">
               <CardDescription>Total Stolen Units</CardDescription>
               <CardTitle className="text-3xl">{summaryStats.totalStolenUnits}</CardTitle>
+              <div className="text-sm text-muted-foreground">
+                ₹{summaryStats.totalStolenValue.toFixed(2)}
+              </div>
             </CardHeader>
           </Card>
         </div>
@@ -644,12 +670,12 @@ const AdminStockAccountingHistory = () => {
                     <TableHead>Product Name</TableHead>
                     <TableHead className="text-right">Opening Stock</TableHead>
                     <TableHead className="text-right">Additional Stock</TableHead>
-                    <TableHead className="text-right">Sales</TableHead>
-                    <TableHead className="text-right">Wastage</TableHead>
-                    <TableHead className="text-right">Stolen Stock</TableHead>
+                    <TableHead className="text-right">Sold Qty</TableHead>
                     <TableHead className="text-right">Estimated Closing</TableHead>
                     <TableHead className="text-right">Actual Closing</TableHead>
-                    <TableHead className="text-right">Variance</TableHead>
+                    <TableHead className="text-right">Wastage</TableHead>
+                    <TableHead className="text-right">Stolen Stock</TableHead>
+                    <TableHead className="text-right">Sales Value</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -661,20 +687,17 @@ const AdminStockAccountingHistory = () => {
                       <TableCell>{record.product.name}</TableCell>
                       <TableCell className="text-right">{record.opening_stock}</TableCell>
                       <TableCell className="text-right">{record.additional_stock}</TableCell>
-                      <TableCell className="text-right">{record.sales}</TableCell>
-                      <TableCell className="text-right">{record.wastage_stock}</TableCell>
-                      <TableCell className="text-right">{record.stolen_stock}</TableCell>
+                      <TableCell className="text-right">{record.order_count}</TableCell>
                       <TableCell className="text-right font-medium">
                         {record.estimated_closing_stock}
                       </TableCell>
                       <TableCell className="text-right font-medium">
                         {record.actual_closing_stock}
                       </TableCell>
-                      <TableCell
-                        className={`text-right font-medium ${record.variance !== 0 ? 'text-red-500' : ''
-                          }`}
-                      >
-                        {record.variance}
+                      <TableCell className="text-right">{record.wastage_stock}</TableCell>
+                      <TableCell className="text-right">{record.stolen_stock}</TableCell>
+                      <TableCell className="text-right font-medium">
+                        ₹{record.sales.toFixed(2)}
                       </TableCell>
                     </TableRow>
                   ))}
