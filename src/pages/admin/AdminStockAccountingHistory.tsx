@@ -223,7 +223,11 @@ const AdminStockAccountingHistory = () => {
             0,
             estimatedClosingStock - (op.actual_closing_stock || 0) - (op.wastage_stock || 0)
           );
-          const salesValue = soldQty * unitPrice;
+          // Prefer stored historical sales value (captured on that day) to avoid
+          // drift when product prices change later.
+          const salesValue = (op.sales && op.sales > 0)
+            ? op.sales
+            : soldQty * unitPrice;
           const variance = estimatedClosingStock - op.actual_closing_stock;
 
           // Get operator name from created_by
@@ -320,13 +324,18 @@ const AdminStockAccountingHistory = () => {
     const totalSalesValue = filtered.reduce((sum, r) => sum + (r.sales || 0), 0);
     const totalWastageUnits = filtered.reduce((sum, r) => sum + r.wastage_stock, 0);
     const totalStolenUnits = filtered.reduce((sum, r) => sum + r.stolen_stock, 0);
+    const getEffectiveUnitPrice = (record: StockOperationHistoryRecord) => {
+      if ((record.order_count || 0) > 0 && (record.sales || 0) > 0) {
+        return record.sales / record.order_count;
+      }
+      return record.product.unit_price || record.product.price || 0;
+    };
+
     const totalWastageValue = filtered.reduce((sum, r) => {
-      const unitPrice = r.product.unit_price || r.product.price || 0;
-      return sum + (r.wastage_stock * unitPrice);
+      return sum + (r.wastage_stock * getEffectiveUnitPrice(r));
     }, 0);
     const totalStolenValue = filtered.reduce((sum, r) => {
-      const unitPrice = r.product.unit_price || r.product.price || 0;
-      return sum + (r.stolen_stock * unitPrice);
+      return sum + (r.stolen_stock * getEffectiveUnitPrice(r));
     }, 0);
 
     setSummaryStats({

@@ -85,6 +85,13 @@ interface ActiveUser {
   editing_product_id?: string;
 }
 
+interface TodayOrderStats {
+  orderCount: number;
+  paidAmount: number;
+  unpaidAmount: number;
+  totalSales: number;
+}
+
 const AdminStockAccounting = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [stockOperations, setStockOperations] = useState<StockOperation[]>([]);
@@ -102,6 +109,12 @@ const AdminStockAccounting = () => {
   const [realtimeUpdates, setRealtimeUpdates] = useState<RealtimeUpdate[]>([]);
   const [activeUsers, setActiveUsers] = useState<ActiveUser[]>([]);
   const [conflictWarnings, setConflictWarnings] = useState<string[]>([]);
+  const [todayOrderStats, setTodayOrderStats] = useState<TodayOrderStats>({
+    orderCount: 0,
+    paidAmount: 0,
+    unpaidAmount: 0,
+    totalSales: 0,
+  });
   const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const auditLogger = useRef(AuditLogger.getInstance());
   const lastActivityRef = useRef<number>(Date.now());
@@ -337,6 +350,32 @@ const AdminStockAccounting = () => {
 
       if (orderItemsError) throw orderItemsError;
 
+      // Load today's order-level financial stats for header widgets
+      const { data: todayOrdersData, error: todayOrdersError } = await supabase
+        .from('orders')
+        .select('total_amount, payment_status, created_at')
+        .gte('created_at', todayStart)
+        .lt('created_at', tomorrowStart);
+
+      if (todayOrdersError) throw todayOrdersError;
+
+      const normalizedOrders = (todayOrdersData ?? []).filter(
+        order => order.payment_status !== 'cancelled'
+      );
+      const paidAmount = normalizedOrders.reduce((sum, order) => {
+        return order.payment_status === 'paid' ? sum + (order.total_amount || 0) : sum;
+      }, 0);
+      const unpaidAmount = normalizedOrders.reduce((sum, order) => {
+        return order.payment_status === 'unpaid' ? sum + (order.total_amount || 0) : sum;
+      }, 0);
+      const totalSales = paidAmount + unpaidAmount;
+      setTodayOrderStats({
+        orderCount: normalizedOrders.length,
+        paidAmount,
+        unpaidAmount,
+        totalSales,
+      });
+
       const todaySoldQtyMap = new Map<string, number>();
       (orderItemsData ?? []).forEach((item: { product_id: string; quantity: number }) => {
         if (!item.product_id) return;
@@ -536,13 +575,6 @@ const AdminStockAccounting = () => {
     const { exceedsEstimated, exceedsWithWastage } = getValidationIssues(op);
     return exceedsEstimated || exceedsWithWastage;
   });
-
-  // Calculate grand total sales based on actual stock sold
-  const grandTotalSales = filteredOperations.reduce((total, operation) => {
-    const unitPrice = operation.product?.unit_price || operation.product?.price || 0;
-    const sales = (operation.order_count || 0) * unitPrice;
-    return total + sales;
-  }, 0);
 
   const handleFilterChange = (filterType: keyof Filters, value: string) => {
     setFilters(prev => ({ ...prev, [filterType]: value }));
@@ -938,9 +970,23 @@ const AdminStockAccounting = () => {
                 <CardTitle>Stock Operations ({filteredOperations.length})</CardTitle>
                 <CardDescription>Today's stock accounting overview</CardDescription>
               </div>
-              <div className="text-right">
-                <div className="text-2xl font-bold text-green-600">₹{grandTotalSales.toLocaleString()}</div>
-                <div className="text-sm text-gray-500">Total Sales</div>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-right">
+                <div>
+                  <div className="text-xl font-bold text-slate-700">{todayOrderStats.orderCount}</div>
+                  <div className="text-xs text-gray-500">Today's Orders</div>
+                </div>
+                <div>
+                  <div className="text-xl font-bold text-green-600">₹{todayOrderStats.paidAmount.toLocaleString()}</div>
+                  <div className="text-xs text-gray-500">Paid Amount</div>
+                </div>
+                <div>
+                  <div className="text-xl font-bold text-amber-600">₹{todayOrderStats.unpaidAmount.toLocaleString()}</div>
+                  <div className="text-xs text-gray-500">Unpaid Amount</div>
+                </div>
+                <div>
+                  <div className="text-xl font-bold text-emerald-700">₹{todayOrderStats.totalSales.toLocaleString()}</div>
+                  <div className="text-xs text-gray-500">Total Sales</div>
+                </div>
               </div>
             </div>
           </CardHeader>
@@ -1041,9 +1087,23 @@ const AdminStockAccounting = () => {
                 <CardTitle>Stock Operations ({filteredOperations.length})</CardTitle>
                 <CardDescription>Today's stock accounting overview</CardDescription>
               </div>
-              <div className="text-right">
-                <div className="text-2xl font-bold text-green-600">₹{grandTotalSales.toLocaleString()}</div>
-                <div className="text-sm text-gray-500">Total Sales</div>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-right">
+                <div>
+                  <div className="text-xl font-bold text-slate-700">{todayOrderStats.orderCount}</div>
+                  <div className="text-xs text-gray-500">Today's Orders</div>
+                </div>
+                <div>
+                  <div className="text-xl font-bold text-green-600">₹{todayOrderStats.paidAmount.toLocaleString()}</div>
+                  <div className="text-xs text-gray-500">Paid Amount</div>
+                </div>
+                <div>
+                  <div className="text-xl font-bold text-amber-600">₹{todayOrderStats.unpaidAmount.toLocaleString()}</div>
+                  <div className="text-xs text-gray-500">Unpaid Amount</div>
+                </div>
+                <div>
+                  <div className="text-xl font-bold text-emerald-700">₹{todayOrderStats.totalSales.toLocaleString()}</div>
+                  <div className="text-xs text-gray-500">Total Sales</div>
+                </div>
               </div>
             </div>
           </CardHeader>
