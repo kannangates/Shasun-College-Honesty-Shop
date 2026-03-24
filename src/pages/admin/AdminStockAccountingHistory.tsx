@@ -53,7 +53,6 @@ interface StockOperationDB {
 interface StockOperationHistoryRecord extends StockOperationDB {
   product: Product;
   operator_name?: string;
-  variance: number; // Calculated: estimated_closing_stock - actual_closing_stock
 }
 
 // Filter state
@@ -211,7 +210,7 @@ const AdminStockAccountingHistory = () => {
       // Create products lookup map
       const productsMap = new Map(productsData?.map(p => [p.id, p]) || []);
 
-      // Transform data to include product, operator name, and calculated variance
+      // Transform data to include product and operator name
       const transformedRecords: StockOperationHistoryRecord[] = (operationsData || [])
         .map(op => {
           const product = productsMap.get(op.product_id);
@@ -229,8 +228,6 @@ const AdminStockAccountingHistory = () => {
           const salesValue = (op.sales && op.sales > 0)
             ? op.sales
             : soldQty * unitPrice;
-          const variance = estimatedClosingStock - op.actual_closing_stock;
-
           // Get operator name from created_by
           const operatorId = (op as Record<string, unknown>).created_by as string | undefined;
           const operator_name = operatorId ? usersMap.get(operatorId) || 'Unknown' : 'System';
@@ -252,7 +249,6 @@ const AdminStockAccountingHistory = () => {
             created_by: operatorId,
             product,
             operator_name,
-            variance,
           } as StockOperationHistoryRecord;
         })
         .filter((record): record is StockOperationHistoryRecord => record !== null);
