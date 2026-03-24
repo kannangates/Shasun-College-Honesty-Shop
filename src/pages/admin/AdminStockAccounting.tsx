@@ -593,21 +593,14 @@ const AdminStockAccounting = () => {
 
     const updatedOp: StockOperation = { ...op, [field]: validatedValue };
 
+    const estimatedInputsChanged = ['opening_stock', 'additional_stock', 'order_count'].includes(field);
+
     // Recalculate estimated closing stock based on opening + additional - order_count
-    if (['opening_stock', 'additional_stock', 'order_count'].includes(field)) {
+    if (estimatedInputsChanged) {
       updatedOp.estimated_closing_stock = computeEstimatedClosing(
         updatedOp.opening_stock,
         updatedOp.additional_stock,
         updatedOp.order_count
-      );
-    }
-
-    // Recalculate stolen stock based on estimated - actual - wastage
-    if (['actual_closing_stock', 'wastage_stock', 'opening_stock', 'additional_stock', 'order_count'].includes(field)) {
-      updatedOp.stolen_stock = computeStolenStock(
-        updatedOp.estimated_closing_stock,
-        updatedOp.actual_closing_stock,
-        updatedOp.wastage_stock
       );
     }
 
@@ -617,9 +610,19 @@ const AdminStockAccounting = () => {
       updatedOp.sales = computeSalesAmount(unitPrice, updatedOp.order_count);
     }
 
-    // Auto-update actual closing stock if it matches the previous estimated value
-    if (op.actual_closing_stock === op.estimated_closing_stock) {
+    // Auto-update actual closing stock only when estimated inputs change and
+    // the user hasn't manually diverged actual from estimated yet.
+    if (estimatedInputsChanged && op.actual_closing_stock === op.estimated_closing_stock) {
       updatedOp.actual_closing_stock = updatedOp.estimated_closing_stock;
+    }
+
+    // Recalculate stolen stock based on final estimated/actual/wastage values
+    if (['actual_closing_stock', 'wastage_stock', 'opening_stock', 'additional_stock', 'order_count'].includes(field)) {
+      updatedOp.stolen_stock = computeStolenStock(
+        updatedOp.estimated_closing_stock,
+        updatedOp.actual_closing_stock,
+        updatedOp.wastage_stock
+      );
     }
 
     updateOperation(operationId, productId, updatedOp);
@@ -650,7 +653,7 @@ const AdminStockAccounting = () => {
       const newOperations: Omit<StockOperationRow, 'id' | 'updated_at' | 'stolen_stock' | 'sales' | 'estimated_closing_stock'>[] = [];
       const existingOperations: Omit<StockOperationRow, 'updated_at' | 'stolen_stock' | 'sales' | 'estimated_closing_stock'>[] = [];
 
-      stockOperations.forEach(({ product, ...op }) => {
+      stockOperations.forEach(({ ...op }) => {
         if (op.id) {
           // For existing operations (upsert), include id and all editable fields
           const cleanOp: Omit<StockOperationRow, 'updated_at' | 'stolen_stock' | 'sales' | 'estimated_closing_stock'> = {
@@ -778,7 +781,7 @@ const AdminStockAccounting = () => {
     } finally {
       setSaving(false);
     }
-  }, [stockOperations, toast, loadStockOperations, errorMessages, user?.id, profile?.name, computeEstimatedClosing, computeSalesAmount, computeStolenStock, getValidationIssues]);
+  }, [stockOperations, toast, loadStockOperations, errorMessages, user?.id, profile?.name, getValidationIssues]);
 
   if (loading) {
     return (
